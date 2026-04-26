@@ -483,3 +483,87 @@ Resultado HTTP:
   - `dxev-0000000011` AIBOM
   - `dxev-0000000012` cycle limits
 - Ledger HMAC: `valid=true`, `entries_checked=13`
+
+### 2026-04-26 - OPA como camino principal, cobertura completa del bundle y agentes Pro
+
+Objetivo:
+
+- Resolver que DX Pro use OPA como camino principal de politicas.
+- Ampliar cobertura al bundle PMEL completo, no solo a la cadena default.
+- Mantener DX Pro independiente de DX, con agentes Pro propios y gobernados.
+
+Cambios de arquitectura:
+
+- `PolicyEngine` ahora selecciona modo en este orden:
+  1. `opa-http` si existe `DXPRO_OPA_URL`.
+  2. `opa-cli` si el binario `opa` esta disponible.
+  3. `native-fallback` solo como modo degradado/desarrollo.
+- `POST /v1/pmel/run-step` acepta `scope="full_bundle"` para evaluar los 22 paquetes del `manifest.json`.
+- El fallback nativo cubre todos los paquetes declarados en `policy-bundle-pmel-v1.0.0/manifest.json`.
+- `/readyz`, compliance posture e install readiness exponen modo OPA/cobertura.
+- `scripts/validate_opa.py` valida el bundle con OPA local o Docker y evalua todos los paquetes del manifest.
+- Se ajustaron datos JSON del bundle para evitar conflictos de merge de data en OPA.
+
+Agentes Pro implementados:
+
+- `PmelToBeGenerator`
+- `PmelBpmnLintAgent`
+- `PmelVisualInterpreter`
+- `DmnEngine`
+- `CryptoParticipant`
+
+Regla de ejecucion de agentes:
+
+- Cada agente ejecuta primero `runtime.run_step(...)`.
+- Si PMEL/ATK no permite continuar, el artefacto queda en `null`.
+- Si permite, se registra evidencia adicional `agent_artifact`.
+
+Endpoints agregados:
+
+- `POST /v1/agents/to-be/generate`
+- `POST /v1/agents/bpmn-lint`
+- `POST /v1/agents/visual-interpret`
+- `POST /v1/agents/dmn/evaluate`
+- `POST /v1/agents/crypto/decommission`
+- Aliases bajo `/v1/dxpro/agents/...`
+
+Verificacion de tests:
+
+```powershell
+$env:PYTHONPATH='src'; python -m pytest tests -q
+```
+
+Resultado:
+
+- `25 passed in 3.00s`
+
+Verificacion smoke:
+
+```powershell
+python scripts\smoke_test.py
+```
+
+Resultado:
+
+- `full_bundle_decision_count=22`
+- `full_bundle_outcome=DENY`
+- El `DENY` es aceptable en smoke porque el objetivo del caso es confirmar cobertura completa del bundle.
+
+Verificacion OPA:
+
+```powershell
+$opaPath = Resolve-Path '.tools'
+$env:PATH = "$opaPath;$env:PATH"
+python scripts\validate_opa.py
+```
+
+Resultado:
+
+- `OPA manifest evaluation passed for 22 packages.`
+
+Verificacion HTTP local:
+
+- Se reinicio servidor en `http://127.0.0.1:8310` con OPA CLI activo.
+- `GET /readyz` retorno `policy_engine_mode=opa-cli` y `opa_mode=true`.
+- `POST /v1/pmel/run-step` con `scope="full_bundle"` retorno `decision_count=22` y primera decision con `policy_mode=opa-cli`.
+- `POST /v1/agents/to-be/generate` retorno `outcome=PERMIT`, `artifact_type=pmel_to_be_blueprint` y `artifact_evidence_id=dxev-0000000028`.

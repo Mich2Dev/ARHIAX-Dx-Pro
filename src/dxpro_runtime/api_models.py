@@ -35,6 +35,15 @@ class PmelCaptureRequest(FlexiblePayload):
     trace_id: str | None = None
 
 
+class AgentExecuteRequest(FlexiblePayload):
+    subject: str | None = None
+    trace_id: str | None = None
+    autonomy: dict[str, Any] | None = None
+    consent: dict[str, Any] | None = None
+    aibom: dict[str, Any] | None = None
+    execution: dict[str, Any] | None = None
+
+
 class DiagnosticEvaluateRequest(FlexiblePayload):
     request_id: str | None = None
     trace_id: str | None = None

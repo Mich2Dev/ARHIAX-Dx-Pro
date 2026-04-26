@@ -43,6 +43,8 @@ class DiagnosticService:
             "model_strategy_summary": self.catalog.model_strategy(),
             "bbr_baseline": self.catalog.bbr_baseline(),
             "policy_bundle": self.runtime.policy_engine.manifest,
+            "policy_engine_mode": self.runtime.policy_engine.mode,
+            "policy_packages_covered": self.runtime.policy_engine.package_names(),
             "ledger_head": self.runtime.ledger.head(),
         }
 
@@ -57,8 +59,13 @@ class DiagnosticService:
             },
             {
                 "id": "opa_binding",
-                "status": "PASS" if self.config.opa_url else "WARN",
-                "detail": self.config.opa_url or "native fallback active",
+                "status": "PASS" if self.runtime.policy_engine.mode in {"opa-http", "opa-cli"} else "WARN",
+                "detail": self.config.opa_url or self.runtime.policy_engine.opa_path or "native fallback active",
+            },
+            {
+                "id": "bundle_coverage",
+                "status": "PASS" if len(self.runtime.policy_engine.package_names()) >= 22 else "WARN",
+                "detail": f"{len(self.runtime.policy_engine.package_names())} packages declared",
             },
         ]
         return {
@@ -233,12 +240,13 @@ class DiagnosticService:
 
     def _run_diagnostic_pmel_step(self, payload: dict[str, Any], trace_id: str, requested_autonomy_level: str) -> dict[str, Any]:
         pmel = payload.get("pmel", {})
+        pmel_autonomy_level = requested_autonomy_level if requested_autonomy_level in {"A3", "A4"} else "A2"
         aibom = pmel.get(
             "aibom",
             {
                 "bundle_version": self.catalog.version,
-                "models": ["client_bound_model"],
-                "prompts": ["dxpro-diagnostic-v1"],
+                "models": ["claude-sonnet-4-7"],
+                "prompts": ["pmel-capture-agent-v1.0"],
                 "owner": "Sinergia Consulting Group",
             },
         )
@@ -250,8 +258,8 @@ class DiagnosticService:
                 "step": "diagnostic_pre_execution",
                 "input": {
                     "autonomy": {
-                        "component": "diagnostic_agent",
-                        "requested_level": requested_autonomy_level,
+                        "component": "capture_agent",
+                        "requested_level": pmel_autonomy_level,
                         "violations_30d": int(pmel.get("violations_30d", 0)),
                     },
                     "consent": {"action": pmel.get("action", "ingest_to_llm"), "consents": consents},

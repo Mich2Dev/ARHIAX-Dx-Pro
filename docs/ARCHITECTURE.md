@@ -51,6 +51,7 @@ flowchart LR
 | `policy.py` | Policy evaluation through OPA or native fallback |
 | `runtime.py` | PMEL step orchestration and ATK aggregation |
 | `capture_agent.py` | First governed PMEL agent stub for process interview intake |
+| `pro_agents.py` | Governed DX Pro agents for TO-BE generation, BPMN lint, visual interpretation, DMN evaluation and crypto decommissioning plans |
 | `evidence.py` | Append-only HMAC ledger with interprocess file lock |
 | `provenance.py` | HMAC-SHA256 provenance certificates |
 | `api.py` | FastAPI application surface |
@@ -69,6 +70,11 @@ flowchart LR
 | `POST /v1/pmel/evaluate` | Single PMEL policy evaluation |
 | `POST /v1/pmel/run-step` | PMEL chain execution |
 | `POST /v1/pmel/capture` | Governed PMEL capture draft |
+| `POST /v1/agents/to-be/generate` | Governed TO-BE blueprint generation |
+| `POST /v1/agents/bpmn-lint` | Governed BPMN lint report |
+| `POST /v1/agents/visual-interpret` | Governed visual process interpretation |
+| `POST /v1/agents/dmn/evaluate` | Governed DMN table evaluation |
+| `POST /v1/agents/crypto/decommission` | Governed decommissioning plan |
 | `GET /v1/evidence` | Recent evidence entries |
 | `GET /v1/evidence?trace_id={trace_id}` | Evidence by trace |
 | `GET /v1/pmel/runs/{trace_id}` | Trace run view |
@@ -78,17 +84,21 @@ flowchart LR
 
 ## Policy Execution
 
-DX Pro supports two policy modes:
+DX Pro uses OPA as the primary policy path.
 
-- Native fallback for core PMEL packages used in early vertical slices.
-- OPA delegation when `DXPRO_OPA_URL` is configured.
+Policy engine mode selection:
 
-Native fallback currently covers:
+1. `opa-http` when `DXPRO_OPA_URL` points to a running OPA server.
+2. `opa-cli` when the `opa` binary is available locally.
+3. `native-fallback` only when OPA is unavailable.
 
-- `arhia.pmel.base.autonomy`
-- `arhia.pmel.governance.consent_gates`
-- `arhia.pmel.base.aibom`
-- `arhia.pmel.governance.cycle_limits`
+The native fallback covers every package declared in the PMEL bundle manifest so degraded mode remains explicit and auditable. Runtime readiness exposes the active `policy_engine_mode`.
+
+Full-bundle execution is available by passing `scope="full_bundle"` to `POST /v1/pmel/run-step`; this evaluates all 22 manifest packages and records individual evidence for each decision.
+
+## Pro Agent Execution
+
+Each Pro agent uses the same PMEL/ATK control path before producing output. The agent pre-execution chain validates autonomy, consent, AIBOM and cycle limits. If the aggregate outcome is not allowed, the response returns no artifact. If allowed, the agent writes an additional `agent_artifact` ledger entry bound to the same trace.
 
 ## Evidence Model
 

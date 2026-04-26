@@ -15,7 +15,7 @@ Cubrir el flujo productivo mejorado:
 
 ## Estado
 
-Producto standalone en fase vertical. Mientras OPA CLI/Server no este disponible, usa un evaluador nativo minimo para policies seleccionadas; si `DXPRO_OPA_URL` esta configurado, delega decision al servidor OPA.
+Producto standalone en fase vertical. OPA es el camino principal de decision: primero `DXPRO_OPA_URL`, luego binario `opa` local, y solo despues fallback nativo auditado. El fallback cubre los 22 paquetes declarados en el bundle PMEL para evitar saltos silenciosos de cobertura.
 
 ## Endpoints
 
@@ -31,6 +31,11 @@ Producto standalone en fase vertical. Mientras OPA CLI/Server no este disponible
 - `POST /v1/dxpro/pmel/evaluate`
 - `POST /v1/dxpro/pmel/run-step`
 - `POST /v1/dxpro/pmel/capture`
+- `POST /v1/agents/to-be/generate`
+- `POST /v1/agents/bpmn-lint`
+- `POST /v1/agents/visual-interpret`
+- `POST /v1/agents/dmn/evaluate`
+- `POST /v1/agents/crypto/decommission`
 - `GET /v1/evidence`
 - `GET /v1/evidence?trace_id={trace_id}`
 - `GET /v1/pmel/runs/{trace_id}`
@@ -142,9 +147,41 @@ python scripts/run_fixture.py fixtures/run_step_permit.json
 
 Si la gobernanza devuelve `DENY`, `ESCALATE` o `SUSPEND`, el artefacto queda en `null`.
 
+## Pro Agents
+
+DX Pro incluye agentes Pro standalone, todos gobernados por `run_step` antes de generar artefactos:
+
+- `PmelToBeGenerator`: genera blueprint TO-BE desde actividades AS-IS.
+- `PmelBpmnLintAgent`: produce reporte de lint BPMN.
+- `PmelVisualInterpreter`: mapea observaciones visuales a senales de proceso.
+- `DmnEngine`: evalua tablas de decision deterministicas.
+- `CryptoParticipant`: prepara plan de decommissioning/crypto-shred en modo `plan_only`.
+
+Cada agente registra evidencia PMEL individual, evidencia agregada y un evento `agent_artifact` cuando la decision permite crear el artefacto.
+
 ## OPA
 
-Validar bundle con OPA local o Docker:
+DX Pro treats OPA as the primary policy path.
+
+Policy engine mode selection:
+
+1. `opa-http` when `DXPRO_OPA_URL` points to a running OPA server.
+2. `opa-cli` when the `opa` binary is available locally.
+3. `native-fallback` only for development/degraded mode.
+
+The native fallback now covers every package declared by `policy-bundle-pmel-v1.0.0/manifest.json`, so full-bundle tests do not silently skip policies when OPA is unavailable.
+
+Run the full bundle through the runtime:
+
+```json
+{
+  "subject": "pmel-full-bundle",
+  "scope": "full_bundle",
+  "input": {}
+}
+```
+
+Validate bundle with OPA local or Docker:
 
 ```powershell
 python scripts/validate_opa.py

@@ -89,3 +89,31 @@ def test_fastapi_certificate_verify_and_audit_pack(tmp_path: Path) -> None:
     assert audit_pack.status_code == 200
     assert audit_pack.json()["entry_count"] == 7
     assert audit_pack.json()["certificate_verifications"][0]["trusted"] is True
+
+
+def test_fastapi_pro_agent_endpoints_are_governed(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    to_be = client.post(
+        "/v1/agents/to-be/generate",
+        json={"as_is_activities": [{"label": "recibir solicitud"}, {"label": "validar datos"}]},
+    )
+    dmn = client.post(
+        "/v1/dxpro/agents/dmn/evaluate",
+        json={
+            "facts": {"qa_score": 91, "risk": "low"},
+            "decision_table": {
+                "id": "publish_gate",
+                "rules": [{"id": "approve-clean", "when": {"qa_score": {"min": 85}, "risk": "low"}, "then": {"decision": "approve_draft"}}],
+                "default": {"decision": "manual_review"},
+            },
+        },
+    )
+
+    assert to_be.status_code == 200
+    assert to_be.json()["outcome"] == "PERMIT"
+    assert to_be.json()["artifact"]["artifact_type"] == "pmel_to_be_blueprint"
+    assert to_be.json()["artifact_evidence_id"] is not None
+    assert dmn.status_code == 200
+    assert dmn.json()["artifact"]["artifact_type"] == "dmn_decision_result"
+    assert dmn.json()["artifact"]["matched_rule_id"] == "approve-clean"

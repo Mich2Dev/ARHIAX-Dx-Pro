@@ -6,13 +6,14 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 
-from .api_models import CertificateVerifyRequest, DiagnosticEvaluateRequest, PmelCaptureRequest, PmelPolicyRequest, PmelStepRequest
+from .api_models import AgentExecuteRequest, CertificateVerifyRequest, DiagnosticEvaluateRequest, PmelCaptureRequest, PmelPolicyRequest, PmelStepRequest
 from .capture_agent import PmelCaptureAgent
 from .catalog import DxProCatalog
 from .config import RuntimeConfig, load_config
 from .diagnostics import DiagnosticService
 from .evidence import EvidenceLedger
 from .policy import PolicyEngine
+from .pro_agents import CryptoParticipant, DmnEngine, PmelBpmnLintAgent, PmelToBeGenerator, PmelVisualInterpreter
 from .runtime import DxProRuntime
 
 
@@ -29,6 +30,13 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     catalog = DxProCatalog()
     runtime = build_runtime(config)
     capture_agent = PmelCaptureAgent(runtime)
+    pro_agents = {
+        "to_be_generator": PmelToBeGenerator(runtime),
+        "bpmn_lint_agent": PmelBpmnLintAgent(runtime),
+        "visual_interpreter": PmelVisualInterpreter(runtime),
+        "dmn_engine": DmnEngine(runtime),
+        "crypto_participant": CryptoParticipant(runtime),
+    }
     diagnostics = DiagnosticService(config, catalog, runtime)
 
     app = FastAPI(
@@ -40,6 +48,7 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     app.state.catalog = catalog
     app.state.runtime = runtime
     app.state.capture_agent = capture_agent
+    app.state.pro_agents = pro_agents
     app.state.diagnostics = diagnostics
 
     @app.get("/")
@@ -66,6 +75,11 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
                 "GET /v1/evidence/verify",
                 "POST /v1/certificates/verify",
                 "GET /v1/audit-pack/{trace_id}",
+                "POST /v1/agents/to-be/generate",
+                "POST /v1/agents/bpmn-lint",
+                "POST /v1/agents/visual-interpret",
+                "POST /v1/agents/dmn/evaluate",
+                "POST /v1/agents/crypto/decommission",
             ],
         }
 
@@ -80,7 +94,8 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
             "mode": "standalone",
             "ledger_path": str(config.ledger_path),
             "policy_bundle_path": str(config.policy_bundle_path),
-            "opa_mode": bool(config.opa_url),
+            "policy_engine_mode": runtime.policy_engine.mode,
+            "opa_mode": runtime.policy_engine.mode in {"opa-http", "opa-cli"},
         }
 
     @app.get("/v1/compliance/posture")
@@ -141,6 +156,31 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     @app.post("/v1/dxpro/pmel/capture")
     def capture_pmel(request: PmelCaptureRequest) -> dict[str, Any]:
         return capture_agent.capture(request.to_payload())
+
+    @app.post("/v1/agents/to-be/generate")
+    @app.post("/v1/dxpro/agents/to-be/generate")
+    def generate_to_be(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["to_be_generator"].execute(request.to_payload())
+
+    @app.post("/v1/agents/bpmn-lint")
+    @app.post("/v1/dxpro/agents/bpmn-lint")
+    def lint_bpmn(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["bpmn_lint_agent"].execute(request.to_payload())
+
+    @app.post("/v1/agents/visual-interpret")
+    @app.post("/v1/dxpro/agents/visual-interpret")
+    def interpret_visual(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["visual_interpreter"].execute(request.to_payload())
+
+    @app.post("/v1/agents/dmn/evaluate")
+    @app.post("/v1/dxpro/agents/dmn/evaluate")
+    def evaluate_dmn(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["dmn_engine"].execute(request.to_payload())
+
+    @app.post("/v1/agents/crypto/decommission")
+    @app.post("/v1/dxpro/agents/crypto/decommission")
+    def decommission_crypto(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["crypto_participant"].execute(request.to_payload())
 
     return app
 

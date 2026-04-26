@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+
+import pytest
 
 from dxpro_runtime.capture_agent import PmelCaptureAgent
 from dxpro_runtime.catalog import DxProCatalog
@@ -9,6 +12,7 @@ from dxpro_runtime.diagnostics import DiagnosticService
 from dxpro_runtime.evidence import EvidenceLedger
 from dxpro_runtime.models import EvaluationRequest
 from dxpro_runtime.policy import PolicyEngine
+from dxpro_runtime.pro_agents import CryptoParticipant, DmnEngine, PmelBpmnLintAgent, PmelToBeGenerator, PmelVisualInterpreter
 from dxpro_runtime.runtime import DxProRuntime
 
 
@@ -300,3 +304,126 @@ def test_dxpro_diagnostic_missing_pmel_consent_denies(tmp_path: Path) -> None:
 
     assert response["decision"]["status"] == "DENY"
     assert response["pmel_step"]["outcome"] == "DENY"
+
+
+def _runtime(tmp_path: Path) -> DxProRuntime:
+    return DxProRuntime(
+        policy_engine=PolicyEngine(tmp_path / "missing-bundle"),
+        ledger=EvidenceLedger(tmp_path / "evidence.jsonl", "test-secret"),
+    )
+
+
+def test_to_be_generator_creates_blueprint(tmp_path: Path) -> None:
+    agent = PmelToBeGenerator(_runtime(tmp_path))
+
+    result = agent.execute({"as_is_activities": [{"label": "recibir solicitud"}, {"label": "validar datos"}]})
+
+    assert result["outcome"] == "PERMIT"
+    assert result["artifact"]["artifact_type"] == "pmel_to_be_blueprint"
+    assert result["artifact"]["step_count"] == 2
+    assert result["artifact_evidence_id"] == "dxev-0000000006"
+
+
+def test_bpmn_lint_agent_reports_model_issues(tmp_path: Path) -> None:
+    agent = PmelBpmnLintAgent(_runtime(tmp_path))
+
+    result = agent.execute({"bpmn_model": {"nodes": [{"id": "task-1", "type": "task"}], "edges": []}})
+
+    assert result["outcome"] == "PERMIT"
+    assert result["artifact"]["artifact_type"] == "pmel_bpmn_lint_report"
+    assert result["artifact"]["outcome"] == "DENY"
+    assert result["artifact"]["issue_count"] >= 2
+
+
+def test_visual_interpreter_maps_findings(tmp_path: Path) -> None:
+    agent = PmelVisualInterpreter(_runtime(tmp_path))
+
+    result = agent.execute({"observations": [{"text": "Hay espera larga antes del handoff"}]})
+
+    assert result["artifact"]["artifact_type"] == "pmel_visual_interpretation"
+    assert result["artifact"]["findings"][0]["mapped_signal"] == "queue_or_delay"
+
+
+def test_dmn_engine_returns_matching_decision(tmp_path: Path) -> None:
+    agent = DmnEngine(_runtime(tmp_path))
+
+    result = agent.execute(
+        {
+            "facts": {"qa_score": 91, "risk": "low"},
+            "decision_table": {
+                "id": "publish_gate",
+                "rules": [
+                    {
+                        "id": "approve-clean",
+                        "when": {"qa_score": {"min": 85}, "risk": "low"},
+                        "then": {"decision": "approve_draft"},
+                    }
+                ],
+                "default": {"decision": "manual_review"},
+            },
+        }
+    )
+
+    assert result["artifact"]["artifact_type"] == "dmn_decision_result"
+    assert result["artifact"]["matched_rule_id"] == "approve-clean"
+    assert result["artifact"]["decision"]["decision"] == "approve_draft"
+
+
+def test_crypto_participant_returns_plan_only(tmp_path: Path) -> None:
+    agent = CryptoParticipant(_runtime(tmp_path))
+
+    result = agent.execute({"targets": [{"dataset": "raw-responses", "key_id": "kms-001"}]})
+
+    assert result["artifact"]["artifact_type"] == "crypto_decommissioning_plan"
+    assert result["artifact"]["execution_mode"] == "plan_only"
+    assert result["artifact"]["requires_operator_confirmation"] is True
+
+
+def test_pro_agent_blocks_artifact_when_consent_missing(tmp_path: Path) -> None:
+    agent = PmelToBeGenerator(_runtime(tmp_path))
+
+    result = agent.execute(
+        {
+            "consent": {"action": "ingest_to_llm", "consents": {"T1": True}},
+            "as_is_activities": [{"label": "recibir solicitud"}],
+        }
+    )
+
+    assert result["outcome"] == "DENY"
+    assert result["artifact"] is None
+
+
+def test_full_bundle_scope_covers_all_manifest_packages(tmp_path: Path) -> None:
+    bundle_path = Path(__file__).resolve().parents[1] / "policy-bundle-pmel-v1.0.0"
+    runtime = DxProRuntime(
+        policy_engine=PolicyEngine(bundle_path, opa_path=""),
+        ledger=EvidenceLedger(tmp_path / "evidence.jsonl", "test-secret"),
+    )
+
+    response = runtime.run_step({"subject": "pmel-full-bundle", "scope": "full_bundle", "input": {}})
+
+    packages = {decision["package"] for decision in response.decisions}
+    assert packages == set(runtime.policy_engine.package_names())
+    assert len(response.decisions) == 22
+    assert all(decision["reason"] != "native_evaluator_not_implemented_for_package" for decision in response.decisions)
+    assert response.evidence_id == "dxev-0000000023"
+
+
+def test_opa_cli_mode_evaluates_productive_bundle_without_legacy_tests() -> None:
+    bundle_path = Path(__file__).resolve().parents[1] / "policy-bundle-pmel-v1.0.0"
+    local_opa = bundle_path.parent / ".tools" / "opa.exe"
+    opa_path = shutil.which("opa") or (str(local_opa) if local_opa.exists() else None)
+    if not opa_path:
+        pytest.skip("OPA binary not available")
+
+    engine = PolicyEngine(bundle_path, opa_path=opa_path)
+    decision = engine.evaluate(
+        EvaluationRequest(
+            package="arhia.pmel.base.aibom",
+            input={},
+        )
+    )
+
+    assert engine.mode == "opa-cli"
+    assert decision.outcome == "PERMIT"
+    assert decision.details["policy_mode"] == "opa-cli"

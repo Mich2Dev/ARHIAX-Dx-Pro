@@ -105,6 +105,10 @@ class DxProRuntime:
         )
 
     def _default_step_packages(self, payload: dict[str, Any]) -> list[str]:
+        if payload.get("scope") == "full_bundle":
+            packages = self.policy_engine.package_names()
+            if packages:
+                return packages
         return [
             "arhia.pmel.base.autonomy",
             "arhia.pmel.governance.consent_gates",
@@ -124,6 +128,20 @@ class DxProRuntime:
             return step_input.get("aibom", {})
         if package == "arhia.pmel.governance.cycle_limits":
             return step_input.get("execution", {})
+        if package == "arhia.pmel.base.hic":
+            return step_input.get("hic", {})
+        if package.startswith("arhia.pmel.bpmn_lint."):
+            return step_input.get("bpmn_lint", step_input.get("bpmn", {}))
+        if package == "arhia.pmel.governance.to_be_prohibitions":
+            return step_input.get("to_be", {})
+        if package == "arhia.pmel.governance.sensitive_data":
+            return step_input.get("sensitive_data", {})
+        if package == "arhia.pmel.governance.retention":
+            return step_input.get("retention", {})
+        if package == "arhia.pmel.decommissioning.triggers":
+            return step_input.get("decommissioning_trigger", {})
+        if package == "arhia.pmel.decommissioning.crypto_shred":
+            return step_input.get("crypto_shred", {})
         return step_input
 
     def _aggregate_decisions(self, decisions: list[PolicyDecision]) -> PolicyDecision:

@@ -109,6 +109,7 @@ def main() -> int:
             "pmel": {"consents": {"T1": True, "T3": True}},
         }
     )
+    full_bundle = runtime.run_step({"subject": "pmel-full-bundle", "scope": "full_bundle", "input": {}})
 
     print(json.dumps(response.to_dict(), indent=2, ensure_ascii=False))
     print(json.dumps({"ledger_verify": verify}, indent=2, ensure_ascii=False))
@@ -117,6 +118,7 @@ def main() -> int:
     print(json.dumps(capture, indent=2, ensure_ascii=False))
     print(json.dumps({"capture_trace_entries": len(trace_entries)}, indent=2, ensure_ascii=False))
     print(json.dumps(diagnostic, indent=2, ensure_ascii=False))
+    print(json.dumps({"full_bundle_decision_count": len(full_bundle.decisions), "full_bundle_outcome": full_bundle.outcome}, indent=2, ensure_ascii=False))
 
     if response.decision.outcome != "PERMIT":
         return 1
@@ -131,6 +133,8 @@ def main() -> int:
     if diagnostic["decision"]["status"] != "PERMIT" or diagnostic["certificate"] is None:
         return 1
     if not runtime.ledger.verify()["valid"]:
+        return 1
+    if len(full_bundle.decisions) != len(runtime.policy_engine.package_names()):
         return 1
     return 0
 

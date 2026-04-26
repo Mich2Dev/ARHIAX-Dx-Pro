@@ -57,6 +57,18 @@ Default PMEL chain:
 
 Each package emits evidence before aggregation. The aggregate result is then merged with the diagnostic rule result.
 
+## Pro Agent Controls
+
+DX Pro Pro agents must execute through PMEL pre-execution controls before generating any artifact. The current agent set is:
+
+- `PmelToBeGenerator`
+- `PmelBpmnLintAgent`
+- `PmelVisualInterpreter`
+- `DmnEngine`
+- `CryptoParticipant`
+
+The artifact is blocked when PMEL returns `DENY`, `ESCALATE` or `SUSPEND`. Permitted executions record an `agent_artifact` evidence event after the individual policy decisions and aggregate evidence.
+
 ## Autonomy
 
 DX Pro starts at `A1` and caps normal runtime autonomy at `A2`.
@@ -116,11 +128,13 @@ Implemented:
 - FastAPI runtime surface
 - audit pack by `trace_id`
 - certificate verification with evidence binding
+- OPA-first policy mode selection
+- native fallback coverage for all 22 PMEL bundle packages
+- full-bundle runtime execution through `scope="full_bundle"`
+- governed Pro agents with artifact evidence
 
 Planned hardening:
 
 - confirm CI run is green after GitHub publish
-- full OPA bundle coverage as primary policy mode
 - Ed25519 or KMS-backed signatures
-- expanded PMEL agents
 - downloadable audit pack artifact formats

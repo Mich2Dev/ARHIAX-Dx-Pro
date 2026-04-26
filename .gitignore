@@ -1,5 +1,6 @@
 data/
 logs/
+.tools/
 __pycache__/
 .pytest_cache/
 *.pyc

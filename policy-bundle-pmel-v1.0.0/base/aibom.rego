@@ -33,7 +33,9 @@ allowed_prompts := {
     "pmel-capture-agent-v1.0",
     "pmel-visual-interpreter-v1.0",
     "pmel-to-be-generator-v1.0",
-    "pmel-bpmn-lint-agent-v1.0"
+    "pmel-bpmn-lint-agent-v1.0",
+    "pmel-dmn-engine-v1.0",
+    "pmel-crypto-participant-v1.0"
 }
 
 default decision := {"outcome": "DENY", "reason": "aibom_validation_failed"}
