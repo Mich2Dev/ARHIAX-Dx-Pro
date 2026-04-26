@@ -35,6 +35,8 @@ Producto standalone en fase vertical. Mientras OPA CLI/Server no este disponible
 - `GET /v1/evidence?trace_id={trace_id}`
 - `GET /v1/pmel/runs/{trace_id}`
 - `GET /v1/evidence/verify`
+- `POST /v1/certificates/verify`
+- `GET /v1/audit-pack/{trace_id}`
 
 ## Local Server
 
@@ -69,6 +71,34 @@ http://127.0.0.1:8310/docs
 - certificado HMAC-SHA256
 
 El response incluye `decision`, `execution_plan`, `pmel_step`, `certificate`, `rule_results`, `trace_id` y `evidence_id`.
+
+## Certificates and Audit Pack
+
+`POST /v1/certificates/verify` validates the HMAC-SHA256 certificate signature and checks whether the referenced diagnostic evidence HMAC exists in the ledger trace.
+
+Payload:
+
+```json
+{
+  "certificate": {}
+}
+```
+
+`GET /v1/audit-pack/{trace_id}` returns a complete audit package:
+
+- ledger verification result
+- PMEL evidence ids
+- diagnostic evidence ids
+- certificate evidence ids
+- certificate verification results
+- ordered evidence entries for the trace
+
+When certificate issuance is enabled, a diagnostic evaluation writes 7 evidence entries:
+
+1. Four PMEL `policy_decision` entries.
+2. One `pmel_step_aggregate` entry.
+3. One `diagnostic_evaluation` entry.
+4. One `provenance_certificate` entry.
 
 ## Run Step
 

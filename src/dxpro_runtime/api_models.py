@@ -47,3 +47,7 @@ class DiagnosticEvaluateRequest(FlexiblePayload):
     processing_profile: dict[str, Any] = Field(default_factory=dict)
     simulation: dict[str, Any] = Field(default_factory=dict)
     pmel: dict[str, Any] = Field(default_factory=dict)
+
+
+class CertificateVerifyRequest(BaseModel):
+    certificate: dict[str, Any]

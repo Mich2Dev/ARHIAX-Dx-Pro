@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -82,6 +82,46 @@ class DiagnosticService:
             "optional_bindings": ["DXPRO_OPA_URL"],
         }
 
+    def verify_certificate(self, certificate: dict[str, Any]) -> dict[str, Any]:
+        verification = self.signer.verify_certificate(certificate)
+        evidence_hmac = certificate.get("evidence_hmac")
+        trace_id = certificate.get("trace_id")
+        evidence_match = False
+        if trace_id and evidence_hmac:
+            evidence_match = any(entry.get("entry_hmac") == evidence_hmac for entry in self.runtime.ledger.find_by_trace(str(trace_id)))
+        return {
+            **verification,
+            "evidence_match": evidence_match,
+            "trusted": verification["valid"] and evidence_match,
+        }
+
+    def audit_pack(self, trace_id: str) -> dict[str, Any] | None:
+        entries = self.runtime.ledger.find_by_trace(trace_id)
+        if not entries:
+            return None
+        certificates = [
+            entry["certificate"]
+            for entry in entries
+            if entry.get("event_type") == "provenance_certificate" and isinstance(entry.get("certificate"), dict)
+        ]
+        diagnostic_entries = [entry for entry in entries if entry.get("event_type") == "diagnostic_evaluation"]
+        pmel_entries = [entry for entry in entries if entry.get("event_type") in {"policy_decision", "pmel_step_aggregate"}]
+        return {
+            "audit_pack_version": "0.1.0-alpha",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "trace_id": trace_id,
+            "ledger_verification": self.runtime.ledger.verify(),
+            "entry_count": len(entries),
+            "diagnostic_evidence_ids": [entry["id"] for entry in diagnostic_entries],
+            "pmel_evidence_ids": [entry["id"] for entry in pmel_entries],
+            "certificate_evidence_ids": [
+                entry["id"] for entry in entries if entry.get("event_type") == "provenance_certificate"
+            ],
+            "certificates": certificates,
+            "certificate_verifications": [self.verify_certificate(certificate) for certificate in certificates],
+            "entries": entries,
+        }
+
     def evaluate(self, payload: dict[str, Any]) -> dict[str, Any]:
         request_id = payload.get("request_id") or str(uuid.uuid4())
         trace_id = payload.get("trace_id") or str(uuid.uuid4())
@@ -118,6 +158,7 @@ class DiagnosticService:
             }
         )
         certificate = None
+        certificate_evidence = None
         processing_profile = payload.get("processing_profile", {})
         if processing_profile.get("issue_certificate", True):
             certificate = self.signer.issue_certificate(
@@ -128,6 +169,17 @@ class DiagnosticService:
                 evidence_hmac=evidence["entry_hmac"],
                 metadata={"agent": self.catalog.agent_identity(), "catalog_version": self.catalog.version},
             )
+            certificate_evidence = self.runtime.ledger.append(
+                {
+                    "trace_id": trace_id,
+                    "request_id": request_id,
+                    "subject": "dxpro-diagnostic-agent",
+                    "event_type": "provenance_certificate",
+                    "certificate": certificate,
+                    "diagnostic_evidence_id": evidence["id"],
+                    "diagnostic_evidence_hmac": evidence["entry_hmac"],
+                }
+            )
         return {
             "request_id": request_id,
             "trace_id": trace_id,
@@ -137,6 +189,7 @@ class DiagnosticService:
             "rule_results": rules,
             "pmel_step": pmel_step,
             "evidence_id": evidence["id"],
+            "certificate_evidence_id": certificate_evidence["id"] if certificate_evidence else None,
             "human_review_required": decision["requires_human"],
         }
 

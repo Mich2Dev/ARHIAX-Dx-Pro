@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 
-from .api_models import DiagnosticEvaluateRequest, PmelCaptureRequest, PmelPolicyRequest, PmelStepRequest
+from .api_models import CertificateVerifyRequest, DiagnosticEvaluateRequest, PmelCaptureRequest, PmelPolicyRequest, PmelStepRequest
 from .capture_agent import PmelCaptureAgent
 from .catalog import DxProCatalog
 from .config import RuntimeConfig, load_config
@@ -64,6 +64,8 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
                 "GET /v1/evidence?trace_id={trace_id}",
                 "GET /v1/pmel/runs/{trace_id}",
                 "GET /v1/evidence/verify",
+                "POST /v1/certificates/verify",
+                "GET /v1/audit-pack/{trace_id}",
             ],
         }
 
@@ -109,6 +111,17 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     @app.get("/v1/evidence/verify")
     def verify_evidence() -> dict[str, Any]:
         return runtime.ledger.verify()
+
+    @app.post("/v1/certificates/verify")
+    def verify_certificate(request: CertificateVerifyRequest) -> dict[str, Any]:
+        return diagnostics.verify_certificate(request.certificate)
+
+    @app.get("/v1/audit-pack/{trace_id}")
+    def audit_pack(trace_id: str) -> dict[str, Any]:
+        pack = diagnostics.audit_pack(trace_id)
+        if pack is None:
+            raise HTTPException(status_code=404, detail={"error": "trace_not_found", "trace_id": trace_id})
+        return pack
 
     @app.post("/v1/diagnostics/evaluate")
     def evaluate_diagnostic(request: DiagnosticEvaluateRequest) -> dict[str, Any]:

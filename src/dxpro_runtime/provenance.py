@@ -43,3 +43,16 @@ class ProvenanceSigner:
         }
         signature = hmac.new(self.secret, canonical_json(unsigned).encode("utf-8"), hashlib.sha256).hexdigest()
         return {**unsigned, "signature": signature}
+
+    def verify_certificate(self, certificate: dict[str, Any]) -> dict[str, Any]:
+        signature = str(certificate.get("signature", ""))
+        unsigned = {key: value for key, value in certificate.items() if key != "signature"}
+        expected = hmac.new(self.secret, canonical_json(unsigned).encode("utf-8"), hashlib.sha256).hexdigest()
+        return {
+            "valid": hmac.compare_digest(signature, expected),
+            "certificate_id": certificate.get("certificate_id"),
+            "trace_id": certificate.get("trace_id"),
+            "request_id": certificate.get("request_id"),
+            "signature_algorithm": certificate.get("signature_algorithm"),
+            "public_key_id": certificate.get("public_key_id"),
+        }

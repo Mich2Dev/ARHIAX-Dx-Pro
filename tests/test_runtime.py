@@ -259,8 +259,24 @@ def test_dxpro_diagnostic_evaluate_permits_and_certifies(tmp_path: Path) -> None
     assert response["decision"]["status"] == "PERMIT"
     assert response["execution_plan"]["execution_status"] == "PASS"
     assert response["certificate"]["signature_algorithm"] == "HMAC-SHA256"
+    assert response["certificate_evidence_id"] == "dxev-0000000007"
     assert response["pmel_step"]["outcome"] == "PERMIT"
     assert service.runtime.ledger.verify()["valid"] is True
+
+
+def test_dxpro_certificate_verification_and_audit_pack(tmp_path: Path) -> None:
+    service = _diagnostic_service(tmp_path)
+    response = service.evaluate(_diagnostic_payload())
+
+    verification = service.verify_certificate(response["certificate"])
+    audit_pack = service.audit_pack(response["trace_id"])
+
+    assert verification["valid"] is True
+    assert verification["evidence_match"] is True
+    assert verification["trusted"] is True
+    assert audit_pack is not None
+    assert audit_pack["entry_count"] == 7
+    assert audit_pack["certificate_evidence_ids"] == ["dxev-0000000007"]
 
 
 def test_dxpro_diagnostic_publication_escalates(tmp_path: Path) -> None:

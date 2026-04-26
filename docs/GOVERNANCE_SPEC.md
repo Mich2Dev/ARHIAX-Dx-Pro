@@ -94,6 +94,15 @@ Every response must include:
 
 Certificate issuance is enabled by default unless `processing_profile.issue_certificate` is `false`.
 
+Certificates can be verified through `POST /v1/certificates/verify`. Verification has two layers:
+
+- signature validity over the certificate body
+- evidence binding against the diagnostic evidence HMAC stored in the ledger trace
+
+`trusted=true` requires both layers to pass.
+
+`GET /v1/audit-pack/{trace_id}` returns the evidence entries, certificate entries and verification results for a trace.
+
 ## Current Implementation Status
 
 Implemented:

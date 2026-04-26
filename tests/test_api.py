@@ -63,6 +63,7 @@ def test_fastapi_diagnostic_evaluate(tmp_path: Path) -> None:
     payload = response.json()
     assert payload["decision"]["status"] == "PERMIT"
     assert payload["certificate"]["signature_algorithm"] == "HMAC-SHA256"
+    assert payload["certificate_evidence_id"] is not None
     assert payload["pmel_step"]["outcome"] == "PERMIT"
 
 
@@ -73,4 +74,18 @@ def test_fastapi_evidence_verify_after_diagnostic(tmp_path: Path) -> None:
     response = client.get("/v1/evidence/verify")
 
     assert response.status_code == 200
-    assert response.json() == {"valid": True, "entries_checked": 6}
+    assert response.json() == {"valid": True, "entries_checked": 7}
+
+
+def test_fastapi_certificate_verify_and_audit_pack(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    diagnostic = client.post("/v1/diagnostics/evaluate", json=_diagnostic_payload()).json()
+
+    verify = client.post("/v1/certificates/verify", json={"certificate": diagnostic["certificate"]})
+    audit_pack = client.get(f"/v1/audit-pack/{diagnostic['trace_id']}")
+
+    assert verify.status_code == 200
+    assert verify.json()["trusted"] is True
+    assert audit_pack.status_code == 200
+    assert audit_pack.json()["entry_count"] == 7
+    assert audit_pack.json()["certificate_verifications"][0]["trusted"] is True

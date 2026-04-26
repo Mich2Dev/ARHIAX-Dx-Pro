@@ -73,6 +73,8 @@ flowchart LR
 | `GET /v1/evidence?trace_id={trace_id}` | Evidence by trace |
 | `GET /v1/pmel/runs/{trace_id}` | Trace run view |
 | `GET /v1/evidence/verify` | Ledger HMAC verification |
+| `POST /v1/certificates/verify` | Certificate signature and evidence binding verification |
+| `GET /v1/audit-pack/{trace_id}` | Complete audit package for a trace |
 
 ## Policy Execution
 
@@ -95,6 +97,7 @@ Every governed decision writes evidence. A default diagnostic evaluation writes:
 1. Four `policy_decision` entries from the PMEL chain.
 2. One `pmel_step_aggregate` entry.
 3. One `diagnostic_evaluation` entry.
+4. One `provenance_certificate` entry when certificate issuance is enabled.
 
 The ledger is HMAC chained and protected by a lock file during reads and writes.
 
