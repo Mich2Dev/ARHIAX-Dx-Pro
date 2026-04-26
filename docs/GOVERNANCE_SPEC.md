@@ -114,10 +114,13 @@ Implemented:
 - HMAC evidence ledger
 - HMAC provenance certificate
 - FastAPI runtime surface
+- audit pack by `trace_id`
+- certificate verification with evidence binding
 
 Planned hardening:
 
-- full OPA bundle validation in CI
+- confirm CI run is green after GitHub publish
+- full OPA bundle coverage as primary policy mode
 - Ed25519 or KMS-backed signatures
 - expanded PMEL agents
-- audit pack export by `trace_id`
+- downloadable audit pack artifact formats
