@@ -42,6 +42,10 @@ def _diagnostic_payload() -> dict:
     }
 
 
+def _agent_consent() -> dict:
+    return {"action": "ingest_to_llm", "consents": {"T1": True, "T3": True}}
+
+
 def test_fastapi_health_and_posture(tmp_path: Path) -> None:
     client = _client(tmp_path)
 
@@ -65,6 +69,20 @@ def test_fastapi_diagnostic_evaluate(tmp_path: Path) -> None:
     assert payload["certificate"]["signature_algorithm"] == "HMAC-SHA256"
     assert payload["certificate_evidence_id"] is not None
     assert payload["pmel_step"]["outcome"] == "PERMIT"
+
+
+def test_fastapi_diagnostic_denies_when_pmel_consent_omitted(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    payload = _diagnostic_payload()
+    payload.pop("pmel")
+
+    response = client.post("/v1/diagnostics/evaluate", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["decision"]["status"] == "DENY"
+    assert body["pmel_step"]["outcome"] == "DENY"
+    assert "aggregate_deny" in body["decision"]["reasons"]
 
 
 def test_fastapi_evidence_verify_after_diagnostic(tmp_path: Path) -> None:
@@ -96,11 +114,15 @@ def test_fastapi_pro_agent_endpoints_are_governed(tmp_path: Path) -> None:
 
     to_be = client.post(
         "/v1/agents/to-be/generate",
-        json={"as_is_activities": [{"label": "recibir solicitud"}, {"label": "validar datos"}]},
+        json={
+            "consent": _agent_consent(),
+            "as_is_activities": [{"label": "recibir solicitud"}, {"label": "validar datos"}],
+        },
     )
     dmn = client.post(
         "/v1/dxpro/agents/dmn/evaluate",
         json={
+            "consent": _agent_consent(),
             "facts": {"qa_score": 91, "risk": "low"},
             "decision_table": {
                 "id": "publish_gate",
@@ -117,3 +139,17 @@ def test_fastapi_pro_agent_endpoints_are_governed(tmp_path: Path) -> None:
     assert dmn.status_code == 200
     assert dmn.json()["artifact"]["artifact_type"] == "dmn_decision_result"
     assert dmn.json()["artifact"]["matched_rule_id"] == "approve-clean"
+
+
+def test_fastapi_pro_agent_denies_when_consent_omitted(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/v1/agents/to-be/generate",
+        json={"as_is_activities": [{"label": "recibir solicitud"}]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outcome"] == "DENY"
+    assert body["artifact"] is None

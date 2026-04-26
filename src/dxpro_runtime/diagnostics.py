@@ -250,7 +250,7 @@ class DiagnosticService:
                 "owner": "Sinergia Consulting Group",
             },
         )
-        consents = pmel.get("consents", {"T1": True, "T3": True})
+        consents = pmel.get("consents", {})
         step = self.runtime.run_step(
             {
                 "trace_id": trace_id,

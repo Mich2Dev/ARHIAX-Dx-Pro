@@ -63,7 +63,7 @@ class GovernedAgent:
                     ),
                     "consent": payload.get(
                         "consent",
-                        {"action": "ingest_to_llm", "consents": {"T1": True, "T3": True}},
+                        {"action": "ingest_to_llm", "consents": {}},
                     ),
                     "aibom": payload.get(
                         "aibom",

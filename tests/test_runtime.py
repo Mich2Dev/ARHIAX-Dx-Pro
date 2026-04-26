@@ -245,6 +245,10 @@ def _diagnostic_payload() -> dict:
     }
 
 
+def _agent_consent() -> dict:
+    return {"action": "ingest_to_llm", "consents": {"T1": True, "T3": True}}
+
+
 def test_dxpro_compliance_posture_is_standalone(tmp_path: Path) -> None:
     service = _diagnostic_service(tmp_path)
 
@@ -306,6 +310,18 @@ def test_dxpro_diagnostic_missing_pmel_consent_denies(tmp_path: Path) -> None:
     assert response["pmel_step"]["outcome"] == "DENY"
 
 
+def test_dxpro_diagnostic_omitted_pmel_consent_denies(tmp_path: Path) -> None:
+    service = _diagnostic_service(tmp_path)
+    payload = _diagnostic_payload()
+    payload.pop("pmel")
+
+    response = service.evaluate(payload)
+
+    assert response["decision"]["status"] == "DENY"
+    assert response["pmel_step"]["outcome"] == "DENY"
+    assert response["pmel_step"]["reason"] == "aggregate_deny"
+
+
 def _runtime(tmp_path: Path) -> DxProRuntime:
     return DxProRuntime(
         policy_engine=PolicyEngine(tmp_path / "missing-bundle"),
@@ -316,7 +332,12 @@ def _runtime(tmp_path: Path) -> DxProRuntime:
 def test_to_be_generator_creates_blueprint(tmp_path: Path) -> None:
     agent = PmelToBeGenerator(_runtime(tmp_path))
 
-    result = agent.execute({"as_is_activities": [{"label": "recibir solicitud"}, {"label": "validar datos"}]})
+    result = agent.execute(
+        {
+            "consent": _agent_consent(),
+            "as_is_activities": [{"label": "recibir solicitud"}, {"label": "validar datos"}],
+        }
+    )
 
     assert result["outcome"] == "PERMIT"
     assert result["artifact"]["artifact_type"] == "pmel_to_be_blueprint"
@@ -327,7 +348,12 @@ def test_to_be_generator_creates_blueprint(tmp_path: Path) -> None:
 def test_bpmn_lint_agent_reports_model_issues(tmp_path: Path) -> None:
     agent = PmelBpmnLintAgent(_runtime(tmp_path))
 
-    result = agent.execute({"bpmn_model": {"nodes": [{"id": "task-1", "type": "task"}], "edges": []}})
+    result = agent.execute(
+        {
+            "consent": _agent_consent(),
+            "bpmn_model": {"nodes": [{"id": "task-1", "type": "task"}], "edges": []},
+        }
+    )
 
     assert result["outcome"] == "PERMIT"
     assert result["artifact"]["artifact_type"] == "pmel_bpmn_lint_report"
@@ -338,7 +364,12 @@ def test_bpmn_lint_agent_reports_model_issues(tmp_path: Path) -> None:
 def test_visual_interpreter_maps_findings(tmp_path: Path) -> None:
     agent = PmelVisualInterpreter(_runtime(tmp_path))
 
-    result = agent.execute({"observations": [{"text": "Hay espera larga antes del handoff"}]})
+    result = agent.execute(
+        {
+            "consent": _agent_consent(),
+            "observations": [{"text": "Hay espera larga antes del handoff"}],
+        }
+    )
 
     assert result["artifact"]["artifact_type"] == "pmel_visual_interpretation"
     assert result["artifact"]["findings"][0]["mapped_signal"] == "queue_or_delay"
@@ -349,6 +380,7 @@ def test_dmn_engine_returns_matching_decision(tmp_path: Path) -> None:
 
     result = agent.execute(
         {
+            "consent": _agent_consent(),
             "facts": {"qa_score": 91, "risk": "low"},
             "decision_table": {
                 "id": "publish_gate",
@@ -372,7 +404,12 @@ def test_dmn_engine_returns_matching_decision(tmp_path: Path) -> None:
 def test_crypto_participant_returns_plan_only(tmp_path: Path) -> None:
     agent = CryptoParticipant(_runtime(tmp_path))
 
-    result = agent.execute({"targets": [{"dataset": "raw-responses", "key_id": "kms-001"}]})
+    result = agent.execute(
+        {
+            "consent": _agent_consent(),
+            "targets": [{"dataset": "raw-responses", "key_id": "kms-001"}],
+        }
+    )
 
     assert result["artifact"]["artifact_type"] == "crypto_decommissioning_plan"
     assert result["artifact"]["execution_mode"] == "plan_only"
@@ -388,6 +425,15 @@ def test_pro_agent_blocks_artifact_when_consent_missing(tmp_path: Path) -> None:
             "as_is_activities": [{"label": "recibir solicitud"}],
         }
     )
+
+    assert result["outcome"] == "DENY"
+    assert result["artifact"] is None
+
+
+def test_pro_agent_blocks_artifact_when_consent_omitted(tmp_path: Path) -> None:
+    agent = PmelToBeGenerator(_runtime(tmp_path))
+
+    result = agent.execute({"as_is_activities": [{"label": "recibir solicitud"}]})
 
     assert result["outcome"] == "DENY"
     assert result["artifact"] is None
