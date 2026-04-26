@@ -15,7 +15,7 @@ from .diagnostics import DiagnosticService
 from .evidence import EvidenceLedger
 from .llm_client import LlmClient
 from .policy import PolicyEngine
-from .pro_agents import CryptoParticipant, DmnEngine, PmelBpmnLintAgent, PmelToBeGenerator, PmelVisualInterpreter
+from .pro_agents import CryptoParticipant, DmnEngine, PmelBpmnLintAgent, PmelToBeGenerator, PmelVisualInterpreter, RgcAgent
 from .rate_limit import NullRateLimiter, RateLimiter
 from .runtime import DxProRuntime
 
@@ -54,12 +54,14 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     runtime = build_runtime(config)
     llm_client = LlmClient(config.anthropic_api_key) if config.anthropic_api_key else None
     capture_agent = PmelCaptureAgent(runtime)
+    verb_lexicon_path = config.policy_bundle_path / "data" / "lexicon_verbs_es.json"
     pro_agents = {
         "to_be_generator": PmelToBeGenerator(runtime, llm_client),
-        "bpmn_lint_agent": PmelBpmnLintAgent(runtime, llm_client),
+        "bpmn_lint_agent": PmelBpmnLintAgent(runtime, llm_client, verb_lexicon_path),
         "visual_interpreter": PmelVisualInterpreter(runtime, llm_client),
         "dmn_engine": DmnEngine(runtime),
         "crypto_participant": CryptoParticipant(runtime),
+        "rgc_agent": RgcAgent(runtime, llm_client),
     }
     diagnostics = DiagnosticService(config, catalog, runtime)
 
@@ -109,6 +111,7 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
                 "POST /v1/agents/visual-interpret",
                 "POST /v1/agents/dmn/evaluate",
                 "POST /v1/agents/crypto/decommission",
+                "POST /v1/agents/research/build-hypothesis-pack",
             ],
         }
 
@@ -214,6 +217,11 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     @app.post("/v1/dxpro/agents/crypto/decommission", dependencies=protected)
     def decommission_crypto(request: AgentExecuteRequest) -> dict[str, Any]:
         return pro_agents["crypto_participant"].execute(request.to_payload())
+
+    @app.post("/v1/agents/research/build-hypothesis-pack", dependencies=protected)
+    @app.post("/v1/dxpro/agents/research/build-hypothesis-pack", dependencies=protected)
+    def build_hypothesis_pack(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["rgc_agent"].execute(request.to_payload())
 
     return app
 

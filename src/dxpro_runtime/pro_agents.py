@@ -7,8 +7,12 @@ import json
 import re
 from typing import Any
 
+from pathlib import Path
+
+from .bpmn import parse_model, run_lint
 from .llm_client import MODEL_OPUS, MODEL_SONNET, LlmClient
 from .prompts import SYSTEM_BPMN_LINT, SYSTEM_TO_BE_GENERATOR, SYSTEM_VISUAL_INTERPRETER
+from .research import HypothesisBuilder, LensClient, OpenAlexClient
 from .runtime import DxProRuntime
 
 
@@ -181,56 +185,41 @@ class PmelBpmnLintAgent(GovernedAgent):
     step = "bpmn_lint"
     prompt_name = "pmel-bpmn-lint-agent-v1.0"
 
+    def __init__(
+        self,
+        runtime: DxProRuntime,
+        llm_client: LlmClient | None = None,
+        verb_lexicon_path: Path | None = None,
+    ) -> None:
+        super().__init__(runtime, llm_client)
+        self.verb_lexicon_path = verb_lexicon_path
+
     def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
         structural_report = self._run_deterministic_analysis(payload)
-        if self.llm_client is not None:
+        if self.llm_client is not None and structural_report["issue_count"] > 0:
             return self._enrich_with_llm(structural_report)
         return structural_report
 
     def _run_deterministic_analysis(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Rule-based BPMN analysis — runs regardless of LLM availability."""
-        model = payload.get("bpmn_model", {})
-        nodes = model.get("nodes", [])
-        edges = model.get("edges", [])
-        node_ids = {node.get("id") for node in nodes if isinstance(node, dict)}
-        issues: list[dict[str, Any]] = []
-
-        if not any(node.get("type") == "start_event" for node in nodes if isinstance(node, dict)):
-            issues.append(self._issue("BPMN-R01", "DENY", "Missing start event."))
-        if not any(node.get("type") == "end_event" for node in nodes if isinstance(node, dict)):
-            issues.append(self._issue("BPMN-R02", "DENY", "Missing end event."))
-        for edge in edges:
-            if not isinstance(edge, dict):
-                continue
-            if edge.get("source") not in node_ids or edge.get("target") not in node_ids:
-                issues.append(self._issue("BPMN-R03", "DENY", "Edge references an unknown node.", edge))
-        connected = {
-            edge.get("source") for edge in edges if isinstance(edge, dict)
-        } | {
-            edge.get("target") for edge in edges if isinstance(edge, dict)
-        }
-        for node in nodes:
-            if (
-                isinstance(node, dict)
-                and node.get("type") not in {"start_event", "end_event"}
-                and node.get("id") not in connected
-            ):
-                issues.append(self._issue("BPMN-R04", "AUDIT", "Node is orphaned.", {"node_id": node.get("id")}))
-
-        outcome = "PERMIT"
-        if any(issue["outcome"] == "DENY" for issue in issues):
-            outcome = "DENY"
-        elif issues:
-            outcome = "AUDIT"
+        """Catalog R01..R12 deterministic analysis."""
+        raw_model = payload.get("bpmn_model", {}) or {}
+        model = parse_model(raw_model)
+        report = run_lint(model, verb_lexicon_path=self.verb_lexicon_path)
 
         return {
             "artifact_type": "pmel_bpmn_lint_report",
             "llm_mode": "stub",
-            "outcome": outcome,
-            "node_count": len(nodes),
-            "edge_count": len(edges),
-            "issue_count": len(issues),
-            "issues": issues,
+            "catalog_version": "1.0",
+            "rules_checked": [
+                "R01", "R02", "R03", "R04", "R05", "R06",
+                "R07", "R08", "R09", "R10", "R11", "R12",
+            ],
+            "outcome": report.outcome,
+            "node_count": report.node_count,
+            "edge_count": report.edge_count,
+            "issue_count": report.issue_count,
+            "critical_count": report.critical_count,
+            "issues": [i.to_dict() for i in report.issues],
         }
 
     def _enrich_with_llm(self, structural_report: dict[str, Any]) -> dict[str, Any]:
@@ -255,15 +244,6 @@ class PmelBpmnLintAgent(GovernedAgent):
         structural_report["llm_mode"] = "claude"
         structural_report["llm_model"] = MODEL_SONNET
         return structural_report
-
-    def _issue(
-        self,
-        rule_id: str,
-        outcome: str,
-        message: str,
-        details: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        return {"rule_id": rule_id, "outcome": outcome, "message": message, "details": details or {}}
 
 
 # ---------------------------------------------------------------------------
@@ -414,3 +394,62 @@ class CryptoParticipant(GovernedAgent):
             "requires_operator_confirmation": True,
             "execution_mode": "plan_only",
         }
+
+
+# ---------------------------------------------------------------------------
+# RGC — Hypothesis Builder agent
+# Connects external research sources (OpenAlex + Lens.org) and synthesizes
+# a grounded hypothesis_pack for the TO-BE Generator.
+# ---------------------------------------------------------------------------
+
+class RgcAgent(GovernedAgent):
+    component = "rgc_hypothesis_builder"
+    subject = "pmel-rgc-agent"
+    step = "rgc_hypothesis_build"
+    prompt_name = "pmel-rgc-hypothesis-builder-v1.0"
+
+    def __init__(
+        self,
+        runtime: DxProRuntime,
+        llm_client: LlmClient | None = None,
+        openalex: OpenAlexClient | None = None,
+        lens: LensClient | None = None,
+    ) -> None:
+        super().__init__(runtime, llm_client)
+        self._openalex = openalex
+        self._lens = lens
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        engagement_id = str(payload.get("engagement_id", "unknown"))
+        domain = str(payload.get("domain", ""))
+        pain_points = list(payload.get("pain_points") or [])
+
+        if not pain_points:
+            return {
+                "artifact_type": "pmel_hypothesis_pack",
+                "hypothesis_pack_version": "1.0",
+                "engagement_id": engagement_id,
+                "domain": domain,
+                "hypotheses": [],
+                "error": "no_pain_points_provided",
+            }
+
+        builder = HypothesisBuilder(
+            llm_client=self.llm_client,
+            openalex=self._openalex or OpenAlexClient(),
+            lens=self._lens or LensClient(),
+        )
+        try:
+            pack = builder.build(
+                engagement_id=engagement_id,
+                domain=domain,
+                pain_points=pain_points,
+            )
+        finally:
+            if self._openalex is None and builder.openalex is not None:
+                builder.openalex.close()
+            if self._lens is None and builder.lens is not None:
+                builder.lens.close()
+
+        pack["artifact_type"] = "pmel_hypothesis_pack"
+        return pack
