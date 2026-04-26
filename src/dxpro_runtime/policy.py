@@ -292,6 +292,7 @@ class PolicyEngine:
             "lint_agent": "A2",
             "dmn_engine": "A2",
             "crypto_participant": "A2",
+            "rgc_hypothesis_builder": "A2",
             "diagnostic_agent": "A2",
         }
         if violations >= 3:

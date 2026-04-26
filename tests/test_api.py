@@ -131,6 +131,15 @@ def test_fastapi_pro_agent_endpoints_are_governed(tmp_path: Path) -> None:
             },
         },
     )
+    rgc = client.post(
+        "/v1/agents/research/build-hypothesis-pack",
+        json={
+            "consent": _agent_consent(),
+            "engagement_id": "eng-api-001",
+            "domain": "service operations",
+            "pain_points": ["manual handoff delays"],
+        },
+    )
 
     assert to_be.status_code == 200
     assert to_be.json()["outcome"] == "PERMIT"
@@ -139,6 +148,10 @@ def test_fastapi_pro_agent_endpoints_are_governed(tmp_path: Path) -> None:
     assert dmn.status_code == 200
     assert dmn.json()["artifact"]["artifact_type"] == "dmn_decision_result"
     assert dmn.json()["artifact"]["matched_rule_id"] == "approve-clean"
+    assert rgc.status_code == 200
+    assert rgc.json()["outcome"] == "PERMIT"
+    assert rgc.json()["artifact"]["artifact_type"] == "pmel_hypothesis_pack"
+    assert rgc.json()["artifact"]["llm_mode"] == "stub"
 
 
 def test_fastapi_pro_agent_denies_when_consent_omitted(tmp_path: Path) -> None:

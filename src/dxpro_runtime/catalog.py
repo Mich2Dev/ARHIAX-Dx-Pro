@@ -66,6 +66,7 @@ class DxProCatalog:
             ("pmel_bpmn_lint_agent", "pmel_validation", "CRITICAL"),
             ("dmn_engine", "decision_modeling", "HIGH"),
             ("crypto_participant", "decommissioning", "CRITICAL"),
+            ("rgc_hypothesis_builder", "research_grounding", "HIGH"),
         ]
         tools: list[dict[str, Any]] = []
         for name, phase, severity in base_tools + pro_tools:

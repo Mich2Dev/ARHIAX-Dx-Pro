@@ -12,7 +12,7 @@ from dxpro_runtime.diagnostics import DiagnosticService
 from dxpro_runtime.evidence import EvidenceLedger
 from dxpro_runtime.models import EvaluationRequest
 from dxpro_runtime.policy import PolicyEngine
-from dxpro_runtime.pro_agents import CryptoParticipant, DmnEngine, PmelBpmnLintAgent, PmelToBeGenerator, PmelVisualInterpreter
+from dxpro_runtime.pro_agents import CryptoParticipant, DmnEngine, PmelBpmnLintAgent, PmelToBeGenerator, PmelVisualInterpreter, RgcAgent
 from dxpro_runtime.runtime import DxProRuntime
 
 
@@ -257,6 +257,7 @@ def test_dxpro_compliance_posture_is_standalone(tmp_path: Path) -> None:
     assert posture["agent_identity"]["name"] == "ARHIAX-DxPro-v1"
     assert posture["agent_identity"]["standard"] == "ARHIAX PMEL/ATK"
     assert "pmel_capture_agent" in {tool["name"] for tool in posture["tool_manifest"]}
+    assert "rgc_hypothesis_builder" in {tool["name"] for tool in posture["tool_manifest"]}
 
 
 def test_dxpro_diagnostic_evaluate_permits_and_certifies(tmp_path: Path) -> None:
@@ -414,6 +415,24 @@ def test_crypto_participant_returns_plan_only(tmp_path: Path) -> None:
     assert result["artifact"]["artifact_type"] == "crypto_decommissioning_plan"
     assert result["artifact"]["execution_mode"] == "plan_only"
     assert result["artifact"]["requires_operator_confirmation"] is True
+
+
+def test_rgc_agent_returns_hypothesis_pack_when_governed(tmp_path: Path) -> None:
+    agent = RgcAgent(_runtime(tmp_path))
+
+    result = agent.execute(
+        {
+            "consent": _agent_consent(),
+            "engagement_id": "eng-rgc-001",
+            "domain": "service operations",
+            "pain_points": ["manual handoff delays"],
+        }
+    )
+
+    assert result["outcome"] == "PERMIT"
+    assert result["artifact"]["artifact_type"] == "pmel_hypothesis_pack"
+    assert result["artifact"]["llm_mode"] == "stub"
+    assert result["artifact_evidence_id"] == "dxev-0000000006"
 
 
 def test_pro_agent_blocks_artifact_when_consent_missing(tmp_path: Path) -> None:
