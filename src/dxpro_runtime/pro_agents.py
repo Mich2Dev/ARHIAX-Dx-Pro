@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from typing import Any
 
+from .llm_client import MODEL_OPUS, MODEL_SONNET, LlmClient
+from .prompts import SYSTEM_BPMN_LINT, SYSTEM_TO_BE_GENERATOR, SYSTEM_VISUAL_INTERPRETER
 from .runtime import DxProRuntime
 
 
@@ -15,8 +18,9 @@ class GovernedAgent:
     step = "agent_pre_execution"
     prompt_name = "pmel-capture-agent-v1.0"
 
-    def __init__(self, runtime: DxProRuntime) -> None:
+    def __init__(self, runtime: DxProRuntime, llm_client: LlmClient | None = None) -> None:
         self.runtime = runtime
+        self.llm_client = llm_client
 
     def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
         step = self._run_governance(payload)
@@ -61,7 +65,7 @@ class GovernedAgent:
                         "aibom",
                         {
                             "bundle_version": "2026.04-dxpro",
-                            "models": ["claude-sonnet-4-7"],
+                            "models": ["claude-sonnet-4-6"],
                             "prompts": [self.prompt_name],
                             "owner": "Sinergia Consulting Group",
                         },
@@ -86,6 +90,10 @@ class GovernedAgent:
         return hashlib.sha256(raw).hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# TO-BE Generator — Claude Opus 4.7
+# ---------------------------------------------------------------------------
+
 class PmelToBeGenerator(GovernedAgent):
     component = "to_be_generator"
     subject = "pmel-to-be-generator"
@@ -93,6 +101,35 @@ class PmelToBeGenerator(GovernedAgent):
     prompt_name = "pmel-to-be-generator-v1.0"
 
     def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self.llm_client is not None:
+            return self._build_with_llm(payload)
+        return self._build_stub(payload)
+
+    def _build_with_llm(self, payload: dict[str, Any]) -> dict[str, Any]:
+        user_prompt = json.dumps(
+            {
+                "engagement_id": payload.get("engagement_id", "unknown"),
+                "cycle_number": payload.get("cycle_number", 1),
+                "scope_mode": payload.get("scope_mode", "standard"),
+                "as_is_bpmn_xml": payload.get("as_is_bpmn", ""),
+                "as_is_process_summary_prose": payload.get("as_is_prose", {}),
+                "hypothesis_pack": payload.get("hypothesis_pack", {}),
+                "previous_lint_report": payload.get("lint_report"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        result = self.llm_client.complete(
+            model=MODEL_OPUS,
+            system=SYSTEM_TO_BE_GENERATOR,
+            user=user_prompt,
+        )
+        result["artifact_type"] = "pmel_to_be_blueprint"
+        result["llm_mode"] = "claude"
+        result["llm_model"] = MODEL_OPUS
+        return result
+
+    def _build_stub(self, payload: dict[str, Any]) -> dict[str, Any]:
         activities = payload.get("as_is_activities") or payload.get("activities") or []
         objectives = payload.get("objectives") or ["reduce_waiting_time", "increase_traceability"]
         to_be_steps = []
@@ -117,6 +154,7 @@ class PmelToBeGenerator(GovernedAgent):
             )
         return {
             "artifact_type": "pmel_to_be_blueprint",
+            "llm_mode": "stub",
             "objective_count": len(objectives),
             "objectives": objectives,
             "step_count": len(to_be_steps),
@@ -132,6 +170,11 @@ class PmelToBeGenerator(GovernedAgent):
         return f"Governed {first}"[:160]
 
 
+# ---------------------------------------------------------------------------
+# BPMN Lint Agent — Claude Sonnet 4.7
+# Deterministic analysis runs in Python; Claude only writes the messages.
+# ---------------------------------------------------------------------------
+
 class PmelBpmnLintAgent(GovernedAgent):
     component = "lint_agent"
     subject = "pmel-bpmn-lint-agent"
@@ -139,6 +182,13 @@ class PmelBpmnLintAgent(GovernedAgent):
     prompt_name = "pmel-bpmn-lint-agent-v1.0"
 
     def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        structural_report = self._run_deterministic_analysis(payload)
+        if self.llm_client is not None:
+            return self._enrich_with_llm(structural_report)
+        return structural_report
+
+    def _run_deterministic_analysis(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Rule-based BPMN analysis — runs regardless of LLM availability."""
         model = payload.get("bpmn_model", {})
         nodes = model.get("nodes", [])
         edges = model.get("edges", [])
@@ -154,9 +204,17 @@ class PmelBpmnLintAgent(GovernedAgent):
                 continue
             if edge.get("source") not in node_ids or edge.get("target") not in node_ids:
                 issues.append(self._issue("BPMN-R03", "DENY", "Edge references an unknown node.", edge))
-        connected = {edge.get("source") for edge in edges if isinstance(edge, dict)} | {edge.get("target") for edge in edges if isinstance(edge, dict)}
+        connected = {
+            edge.get("source") for edge in edges if isinstance(edge, dict)
+        } | {
+            edge.get("target") for edge in edges if isinstance(edge, dict)
+        }
         for node in nodes:
-            if isinstance(node, dict) and node.get("type") not in {"start_event", "end_event"} and node.get("id") not in connected:
+            if (
+                isinstance(node, dict)
+                and node.get("type") not in {"start_event", "end_event"}
+                and node.get("id") not in connected
+            ):
                 issues.append(self._issue("BPMN-R04", "AUDIT", "Node is orphaned.", {"node_id": node.get("id")}))
 
         outcome = "PERMIT"
@@ -164,8 +222,10 @@ class PmelBpmnLintAgent(GovernedAgent):
             outcome = "DENY"
         elif issues:
             outcome = "AUDIT"
+
         return {
             "artifact_type": "pmel_bpmn_lint_report",
+            "llm_mode": "stub",
             "outcome": outcome,
             "node_count": len(nodes),
             "edge_count": len(edges),
@@ -173,9 +233,42 @@ class PmelBpmnLintAgent(GovernedAgent):
             "issues": issues,
         }
 
-    def _issue(self, rule_id: str, outcome: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _enrich_with_llm(self, structural_report: dict[str, Any]) -> dict[str, Any]:
+        """Ask Claude to write human-readable messages for each violation."""
+        user_prompt = json.dumps(
+            {
+                "bpmn_lint_report": structural_report,
+                "instruction": (
+                    "Redacta mensajes claros y accionables para cada issue en el reporte. "
+                    "El análisis determinístico ya está hecho — solo escribe los mensajes."
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        narrative = self.llm_client.complete(
+            model=MODEL_SONNET,
+            system=SYSTEM_BPMN_LINT,
+            user=user_prompt,
+        )
+        structural_report["lint_narrative"] = narrative
+        structural_report["llm_mode"] = "claude"
+        structural_report["llm_model"] = MODEL_SONNET
+        return structural_report
+
+    def _issue(
+        self,
+        rule_id: str,
+        outcome: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return {"rule_id": rule_id, "outcome": outcome, "message": message, "details": details or {}}
 
+
+# ---------------------------------------------------------------------------
+# Visual Interpreter — Claude Opus 4.7 (multimodal)
+# ---------------------------------------------------------------------------
 
 class PmelVisualInterpreter(GovernedAgent):
     component = "visual_interpreter"
@@ -184,6 +277,33 @@ class PmelVisualInterpreter(GovernedAgent):
     prompt_name = "pmel-visual-interpreter-v1.0"
 
     def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        images: list[dict[str, str]] = payload.get("images", [])
+        if self.llm_client is not None and images:
+            return self._build_with_llm(payload, images)
+        return self._build_stub(payload)
+
+    def _build_with_llm(self, payload: dict[str, Any], images: list[dict[str, str]]) -> dict[str, Any]:
+        text_prompt = json.dumps(
+            {
+                "engagement_id": payload.get("engagement_id", "unknown"),
+                "consultant_notes": payload.get("consultant_notes", ""),
+                "instruction": "Interpreta las imágenes adjuntas y produce el artefacto PMEL solicitado.",
+            },
+            ensure_ascii=False,
+        )
+        result = self.llm_client.complete_with_vision(
+            model=MODEL_OPUS,
+            system=SYSTEM_VISUAL_INTERPRETER,
+            text_prompt=text_prompt,
+            images=images,
+        )
+        result["artifact_type"] = "pmel_visual_interpretation"
+        result["llm_mode"] = "claude"
+        result["llm_model"] = MODEL_OPUS
+        result["image_count"] = len(images)
+        return result
+
+    def _build_stub(self, payload: dict[str, Any]) -> dict[str, Any]:
         observations = payload.get("observations") or payload.get("visual_notes") or []
         findings = []
         for index, observation in enumerate(observations[:8], start=1):
@@ -197,6 +317,7 @@ class PmelVisualInterpreter(GovernedAgent):
             )
         return {
             "artifact_type": "pmel_visual_interpretation",
+            "llm_mode": "stub",
             "finding_count": len(findings),
             "findings": findings,
             "confidence": "medium" if findings else "low",
@@ -213,6 +334,10 @@ class PmelVisualInterpreter(GovernedAgent):
         return "process_context"
 
 
+# ---------------------------------------------------------------------------
+# DMN Engine — deterministic Python rule evaluator (no LLM needed)
+# ---------------------------------------------------------------------------
+
 class DmnEngine(GovernedAgent):
     component = "dmn_engine"
     subject = "dxpro-dmn-engine"
@@ -227,13 +352,19 @@ class DmnEngine(GovernedAgent):
             if self._matches(rule.get("when", {}), facts):
                 matched_rule = rule
                 break
-        decision = matched_rule.get("then", {}) if matched_rule else table.get("default", {"decision": "manual_review"})
+        decision = (
+            matched_rule.get("then", {})
+            if matched_rule
+            else table.get("default", {"decision": "manual_review"})
+        )
         return {
             "artifact_type": "dmn_decision_result",
             "table_id": table.get("id", "anonymous_decision_table"),
             "matched_rule_id": matched_rule.get("id") if matched_rule else None,
             "decision": decision,
-            "facts_hash_sha256": hashlib.sha256(repr(sorted(facts.items())).encode("utf-8")).hexdigest(),
+            "facts_hash_sha256": hashlib.sha256(
+                repr(sorted(facts.items())).encode("utf-8")
+            ).hexdigest(),
         }
 
     def _matches(self, conditions: dict[str, Any], facts: dict[str, Any]) -> bool:
@@ -251,6 +382,10 @@ class DmnEngine(GovernedAgent):
                 return False
         return True
 
+
+# ---------------------------------------------------------------------------
+# Crypto Participant — governance planning only, no LLM needed
+# ---------------------------------------------------------------------------
 
 class CryptoParticipant(GovernedAgent):
     component = "crypto_participant"
