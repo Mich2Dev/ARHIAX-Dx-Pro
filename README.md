@@ -1,0 +1,144 @@
+# ARHIAX DX Pro Runtime
+
+Runtime standalone para ARHIAX DX Pro. Toma la cobertura funcional de ARHIAX DX como referencia, pero no importa ni necesita el paquete `arhiax_dx`: DX Pro trae su propio catalogo, gobernanza, evidencia, diagnostico y capa PMEL/ATK.
+
+## Objetivo
+
+Cubrir el flujo productivo mejorado:
+
+1. Recibir una solicitud de diagnostico organizacional.
+2. Validar identidad, frontera, mandato, herramientas, operaciones, datos, autonomia, QA y HIC.
+3. Ejecutar cadena PMEL previa con outcomes ATK.
+4. Construir plan de ejecucion y evidencia por decision.
+5. Emitir certificado de provenance HMAC-SHA256.
+6. Mantener endpoints PMEL directos para captura y validacion de procesos.
+
+## Estado
+
+Producto standalone en fase vertical. Mientras OPA CLI/Server no este disponible, usa un evaluador nativo minimo para policies seleccionadas; si `DXPRO_OPA_URL` esta configurado, delega decision al servidor OPA.
+
+## Endpoints
+
+- `GET /healthz`
+- `GET /readyz`
+- `GET /v1/compliance/posture`
+- `GET /v1/compliance/install-readiness`
+- `GET /v1/compliance/install-blueprint`
+- `POST /v1/diagnostics/evaluate`
+- `POST /v1/pmel/evaluate`
+- `POST /v1/pmel/run-step`
+- `POST /v1/pmel/capture`
+- `POST /v1/dxpro/pmel/evaluate`
+- `POST /v1/dxpro/pmel/run-step`
+- `POST /v1/dxpro/pmel/capture`
+- `GET /v1/evidence`
+- `GET /v1/evidence?trace_id={trace_id}`
+- `GET /v1/pmel/runs/{trace_id}`
+- `GET /v1/evidence/verify`
+
+## Local Server
+
+Run the FastAPI server:
+
+```powershell
+$env:PYTHONPATH='src'
+python -m dxpro_runtime.server
+```
+
+Default URL:
+
+```text
+http://127.0.0.1:8310
+```
+
+OpenAPI is available at:
+
+```text
+http://127.0.0.1:8310/docs
+```
+
+## Diagnostic Evaluate
+
+`POST /v1/diagnostics/evaluate` ejecuta el diagnostico gobernado completo de DX Pro:
+
+- contrato de cliente y frontera `boundary-diagnostico-org-pro`
+- catalogo cerrado de herramientas DX + herramientas Pro PMEL
+- reglas de datos, autonomia, QA, IRR, delta sigma, retencion y publicacion
+- PMEL pre-ejecucion con `autonomy`, `consent_gates`, `aibom` y `cycle_limits`
+- evidencia `diagnostic_evaluation`
+- certificado HMAC-SHA256
+
+El response incluye `decision`, `execution_plan`, `pmel_step`, `certificate`, `rule_results`, `trace_id` y `evidence_id`.
+
+## Run Step
+
+`POST /v1/pmel/run-step` ejecuta una cadena de politicas PMEL y agrega el resultado por prioridad ATK:
+
+1. `SUSPEND`
+2. `DENY`
+3. `ESCALATE`
+4. `MODIFY`
+5. `AUDIT`
+6. `PERMIT`
+
+Por defecto evalua:
+
+- `arhia.pmel.base.autonomy`
+- `arhia.pmel.governance.consent_gates`
+- `arhia.pmel.base.aibom`
+- `arhia.pmel.governance.cycle_limits`
+
+Cada decision genera evidencia individual y el resultado agregado genera una evidencia adicional.
+
+## Fixtures
+
+Casos reproducibles:
+
+- `fixtures/run_step_permit.json`
+- `fixtures/run_step_missing_consent.json`
+- `fixtures/run_step_autonomy_a3.json`
+- `fixtures/run_step_cycle_suspend.json`
+- `fixtures/capture_permit.json`
+
+Ejecutar fixture de `run-step`:
+
+```powershell
+python scripts/run_fixture.py fixtures/run_step_permit.json
+```
+
+## Capture Agent Stub
+
+`POST /v1/pmel/capture` ejecuta gobernanza previa a ingesta y, si el agregado ATK permite continuar, devuelve un artefacto `pmel_capture_draft` con actividades preliminares derivadas del texto de entrevista.
+
+Si la gobernanza devuelve `DENY`, `ESCALATE` o `SUSPEND`, el artefacto queda en `null`.
+
+## OPA
+
+Validar bundle con OPA local o Docker:
+
+```powershell
+python scripts/validate_opa.py
+```
+
+El script usa `opa` si esta instalado. Si no, intenta Docker con `openpolicyagent/opa:0.68.0-rootless`.
+
+## Smoke Test
+
+```powershell
+python scripts/smoke_test.py
+```
+
+## Tests
+
+```powershell
+$env:PYTHONPATH='src'; python -m pytest tests -q
+```
+
+## CI
+
+The GitHub Actions workflow in `.github/workflows/ci.yml` runs:
+
+- package install
+- unit and API tests
+- smoke test
+- OPA bundle validation
