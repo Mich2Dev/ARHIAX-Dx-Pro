@@ -22,7 +22,18 @@ allowed_levels := {
     "whisper": "A1",
     "reviewer_ux": "A0",
     "export": "A0",
-    "cliente_ux_pro_enterprise": "A0"
+    "cliente_ux_pro_enterprise": "A0",
+    "dmn_engine": "A2",
+    "crypto_participant": "A2",
+    "rgc_hypothesis_builder": "A2",
+    "rgc_deep_research_contraster": "A2",
+    "adaptive_question_bank": "A2",
+    "multi_role_scoring": "A2",
+    "psychometrics": "A2",
+    "irr_reliability": "A2",
+    "bayesian_synthesis": "A2",
+    "executive_qa": "A2",
+    "diagnostic_intelligence": "A2"
 }
 
 # PERMIT: agent operates at declared level matching allowed

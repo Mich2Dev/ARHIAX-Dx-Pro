@@ -140,6 +140,29 @@ def test_fastapi_pro_agent_endpoints_are_governed(tmp_path: Path) -> None:
             "pain_points": ["manual handoff delays"],
         },
     )
+    deep_contrast = client.post(
+        "/v1/agents/research/deep-contrast",
+        json={
+            "consent": _agent_consent(),
+            "engagement_id": "eng-api-001",
+            "domain": "service operations",
+            "pain_points": ["manual handoff delays"],
+            "hypothesis_pack": {
+                "hypothesis_pack_version": "1.0",
+                "engagement_id": "eng-api-001",
+                "domain": "service operations",
+                "hypotheses": [{"id": "H1", "statement": "Reduce manual handoffs."}],
+            },
+            "grey_sources": [
+                {
+                    "id": "grey-api-001",
+                    "title": "Operations benchmark",
+                    "source_type": "consulting_report",
+                    "content": "Manual handoffs tend to increase cycle time.",
+                }
+            ],
+        },
+    )
 
     assert to_be.status_code == 200
     assert to_be.json()["outcome"] == "PERMIT"
@@ -152,6 +175,10 @@ def test_fastapi_pro_agent_endpoints_are_governed(tmp_path: Path) -> None:
     assert rgc.json()["outcome"] == "PERMIT"
     assert rgc.json()["artifact"]["artifact_type"] == "pmel_hypothesis_pack"
     assert rgc.json()["artifact"]["llm_mode"] == "stub"
+    assert deep_contrast.status_code == 200
+    assert deep_contrast.json()["outcome"] == "PERMIT"
+    assert deep_contrast.json()["artifact"]["artifact_type"] == "deep_research_contrast_pack"
+    assert deep_contrast.json()["artifact"]["llm_mode"] == "stub"
 
 
 def test_fastapi_pro_agent_denies_when_consent_omitted(tmp_path: Path) -> None:

@@ -77,6 +77,33 @@ class ResearchEvidence:
         }
 
 
+@dataclass(frozen=True)
+class GreySource:
+    """A non-academic source used to contrast RGC hypotheses."""
+    id: str
+    title: str
+    source_type: str = "grey"
+    publisher: str | None = None
+    url: str | None = None
+    publication_date: str | None = None
+    excerpt: str = ""
+    content_hash_sha256: str | None = None
+    retrieved_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "title": self.title,
+            "source_type": self.source_type,
+            "publisher": self.publisher,
+            "url": self.url,
+            "publication_date": self.publication_date,
+            "excerpt": self.excerpt,
+            "content_hash_sha256": self.content_hash_sha256,
+            "retrieved_at": self.retrieved_at,
+        }
+
+
 @dataclass
 class Hypothesis:
     """A grounded hypothesis citing real papers and patents."""

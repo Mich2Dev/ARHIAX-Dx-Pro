@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import statistics
 from typing import Any
 
 from pathlib import Path
@@ -12,7 +13,7 @@ from pathlib import Path
 from .bpmn import parse_model, run_lint
 from .llm_client import MODEL_OPUS, MODEL_SONNET, LlmClient
 from .prompts import SYSTEM_BPMN_LINT, SYSTEM_TO_BE_GENERATOR, SYSTEM_VISUAL_INTERPRETER
-from .research import HypothesisBuilder, LensClient, OpenAlexClient
+from .research import DeepResearchContraster, GreySourceClient, HypothesisBuilder, LensClient, OpenAlexClient
 from .runtime import DxProRuntime
 
 
@@ -453,3 +454,508 @@ class RgcAgent(GovernedAgent):
 
         pack["artifact_type"] = "pmel_hypothesis_pack"
         return pack
+
+
+class RgcDeepResearchContrasterAgent(GovernedAgent):
+    component = "rgc_deep_research_contraster"
+    subject = "pmel-rgc-deep-research-contraster"
+    step = "rgc_deep_research_contrast"
+    prompt_name = "pmel-rgc-deep-research-contraster-v1.0"
+
+    def __init__(
+        self,
+        runtime: DxProRuntime,
+        llm_client: LlmClient | None = None,
+        grey_client: GreySourceClient | None = None,
+    ) -> None:
+        super().__init__(runtime, llm_client)
+        self._grey_client = grey_client
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        engagement_id = str(payload.get("engagement_id", "unknown"))
+        domain = str(payload.get("domain", ""))
+        pain_points = list(payload.get("pain_points") or [])
+        hypothesis_pack = dict(payload.get("hypothesis_pack") or {})
+
+        if not hypothesis_pack.get("hypotheses"):
+            return {
+                "artifact_type": "deep_research_contrast_pack",
+                "contrast_pack_version": "1.0",
+                "engagement_id": engagement_id,
+                "domain": domain,
+                "contrast_matrix": [],
+                "error": "no_hypothesis_pack_provided",
+            }
+
+        builder = DeepResearchContraster(
+            llm_client=self.llm_client,
+            grey_client=self._grey_client,
+        )
+        pack = builder.build(
+            engagement_id=engagement_id,
+            domain=domain,
+            pain_points=pain_points,
+            hypothesis_pack=hypothesis_pack,
+            provided_sources=list(payload.get("grey_sources") or payload.get("provided_sources") or []),
+            urls=list(payload.get("urls") or []),
+        )
+        pack["artifact_type"] = "deep_research_contrast_pack"
+        return pack
+
+
+class AdaptiveQuestionBankAgent(GovernedAgent):
+    component = "adaptive_question_bank"
+    subject = "dxpro-adaptive-question-bank"
+    step = "adaptive_question_bank"
+    prompt_name = "pmel-adaptive-question-bank-v1.0"
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        engagement_id = str(payload.get("engagement_id", "unknown"))
+        roles = _as_list(payload.get("roles")) or ["executive", "operations", "technology"]
+        dimensions = _as_list(payload.get("dimensions")) or [
+            "strategy",
+            "process",
+            "technology",
+            "governance",
+            "innovation",
+        ]
+        pain_points = _as_list(payload.get("pain_points"))
+        questions: list[dict[str, Any]] = []
+        for role in roles:
+            for dimension in dimensions:
+                qid = f"q-{len(questions) + 1:03d}"
+                questions.append(
+                    {
+                        "id": qid,
+                        "role": str(role),
+                        "dimension": str(dimension),
+                        "question": _question_for(str(role), str(dimension), pain_points),
+                        "response_type": "likert_1_5",
+                        "evidence_use": "multi_role_scoring",
+                    }
+                )
+        branching_rules = [
+            {
+                "id": "branch-low-score",
+                "when": {"response_lte": 2},
+                "ask_followup": "Describe the blocker, owner, frequency and evidence available.",
+            },
+            {
+                "id": "branch-high-variance",
+                "when": {"role_variance_gte": 1.5},
+                "ask_followup": "Explain why this dimension is perceived differently across roles.",
+            },
+        ]
+        return {
+            "artifact_type": "question_bank_pack",
+            "question_bank_version": "1.0",
+            "engagement_id": engagement_id,
+            "role_count": len(roles),
+            "dimension_count": len(dimensions),
+            "question_count": len(questions),
+            "questions": questions,
+            "branching_rules": branching_rules,
+            "validation_rules": [
+                "minimum_one_response_per_role",
+                "minimum_one_score_per_dimension",
+                "followup_required_for_low_scores",
+            ],
+            "source_modules": ["g09a_preguntas", "g09b_ramificacion", "g09c_validacion"],
+        }
+
+
+class MultiRoleScoringAgent(GovernedAgent):
+    component = "multi_role_scoring"
+    subject = "dxpro-multi-role-scoring"
+    step = "multi_role_scoring"
+    prompt_name = "pmel-multi-role-scoring-v1.0"
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        responses = _numeric_responses(payload)
+        by_role = _group_average(responses, "role")
+        by_dimension = _group_average(responses, "dimension")
+        by_role_dimension = _group_average(responses, "role_dimension")
+        gaps = _dimension_gaps(responses)
+        overall = _mean([r["score"] for r in responses])
+        maturity = _maturity_level(overall)
+        return {
+            "artifact_type": "multi_role_scoring_pack",
+            "scoring_pack_version": "1.0",
+            "response_count": len(responses),
+            "overall_score": round(overall, 3) if responses else None,
+            "maturity_level": maturity,
+            "scores_by_role": by_role,
+            "scores_by_dimension": by_dimension,
+            "scores_by_role_dimension": by_role_dimension,
+            "largest_role_gaps": gaps[:5],
+            "source_modules": ["g10a_scoring", "scoring_engine"],
+        }
+
+
+class PsychometricsAgent(GovernedAgent):
+    component = "psychometrics"
+    subject = "dxpro-psychometrics"
+    step = "psychometric_evaluation"
+    prompt_name = "pmel-psychometrics-v1.0"
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        matrix = _response_matrix(payload)
+        alpha = _cronbach_alpha(matrix)
+        item_count = len(matrix[0]) if matrix else 0
+        respondent_count = len(matrix)
+        completeness = _completion_ratio(matrix)
+        flags = []
+        if alpha is not None and alpha < 0.7:
+            flags.append("low_internal_consistency")
+        if completeness < 0.8:
+            flags.append("low_completion")
+        return {
+            "artifact_type": "psychometric_quality_pack",
+            "psychometric_pack_version": "1.0",
+            "respondent_count": respondent_count,
+            "item_count": item_count,
+            "cronbach_alpha": round(alpha, 3) if alpha is not None else None,
+            "completion_ratio": round(completeness, 3),
+            "quality_status": "review" if flags else "acceptable",
+            "flags": flags,
+            "source_modules": ["g10b_psicometria"],
+        }
+
+
+class IrrReliabilityAgent(GovernedAgent):
+    component = "irr_reliability"
+    subject = "dxpro-irr-reliability"
+    step = "irr_reliability"
+    prompt_name = "pmel-irr-reliability-v1.0"
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        ratings = _numeric_responses(payload, default_role="rater")
+        scale_min = float(payload.get("scale_min", 1))
+        scale_max = float(payload.get("scale_max", 5))
+        grouped: dict[str, list[float]] = {}
+        for rating in ratings:
+            grouped.setdefault(str(rating.get("item_id") or rating["dimension"]), []).append(rating["score"])
+        item_stats = []
+        stds = []
+        for item_id, values in grouped.items():
+            std = statistics.pstdev(values) if len(values) > 1 else 0.0
+            stds.append(std)
+            item_stats.append(
+                {
+                    "item_id": item_id,
+                    "rater_count": len(values),
+                    "mean_score": round(_mean(values), 3),
+                    "std_dev": round(std, 3),
+                }
+            )
+        scale_range = max(scale_max - scale_min, 1.0)
+        agreement = max(0.0, 1.0 - (_mean(stds) / scale_range)) if stds else 0.0
+        status = "acceptable" if agreement >= 0.75 else "review"
+        return {
+            "artifact_type": "irr_reliability_pack",
+            "irr_pack_version": "1.0",
+            "rating_count": len(ratings),
+            "item_count": len(item_stats),
+            "agreement_index": round(agreement, 3),
+            "reliability_status": status,
+            "item_stats": item_stats,
+            "recommended_action": "proceed" if status == "acceptable" else "recapture_or_hil_review",
+            "source_modules": ["irr_calculator"],
+        }
+
+
+class BayesianSynthesisAgent(GovernedAgent):
+    component = "bayesian_synthesis"
+    subject = "dxpro-bayesian-synthesis"
+    step = "bayesian_synthesis"
+    prompt_name = "pmel-bayesian-synthesis-v1.0"
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        hypotheses = list(payload.get("hypotheses") or [])
+        evidence_signals = list(payload.get("evidence_signals") or [])
+        if not hypotheses:
+            hypotheses = _hypotheses_from_scoring(payload.get("scoring_pack") or {})
+        synthesized = []
+        for index, hypothesis in enumerate(hypotheses, start=1):
+            hid = str(hypothesis.get("id") or f"DH{index}")
+            prior = _clamp_probability(float(hypothesis.get("prior", 0.5)))
+            posterior = prior
+            used_signals = []
+            for signal in evidence_signals:
+                if hid not in _as_list(signal.get("hypothesis_ids")):
+                    continue
+                likelihood = float(signal.get("likelihood_ratio", 1.0))
+                posterior = _bayes_update(posterior, likelihood)
+                used_signals.append(signal.get("id", f"signal-{len(used_signals) + 1}"))
+            synthesized.append(
+                {
+                    "id": hid,
+                    "statement": hypothesis.get("statement", "Diagnostic hypothesis"),
+                    "prior": round(prior, 3),
+                    "posterior": round(posterior, 3),
+                    "confidence": _posterior_confidence(posterior),
+                    "evidence_signal_ids": used_signals,
+                }
+            )
+        synthesized.sort(key=lambda row: row["posterior"], reverse=True)
+        return {
+            "artifact_type": "bayesian_synthesis_pack",
+            "bayesian_pack_version": "1.0",
+            "hypothesis_count": len(synthesized),
+            "prioritized_hypotheses": synthesized,
+            "top_hypothesis_id": synthesized[0]["id"] if synthesized else None,
+            "source_modules": ["g11a_bayesiano"],
+        }
+
+
+class ExecutiveQaAgent(GovernedAgent):
+    component = "executive_qa"
+    subject = "dxpro-executive-qa"
+    step = "executive_qa"
+    prompt_name = "pmel-executive-qa-v1.0"
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        required = [
+            "scoring_pack",
+            "psychometric_pack",
+            "irr_pack",
+            "bayesian_pack",
+            "hypothesis_pack",
+            "contrast_pack",
+            "to_be_pack",
+        ]
+        missing = [key for key in required if not payload.get(key)]
+        risks = []
+        irr = (payload.get("irr_pack") or {}).get("agreement_index")
+        alpha = (payload.get("psychometric_pack") or {}).get("cronbach_alpha")
+        if irr is not None and irr < 0.75:
+            risks.append("low_irr")
+        if alpha is not None and alpha < 0.7:
+            risks.append("low_psychometric_consistency")
+        if (payload.get("contrast_pack") or {}).get("recommended_hil_questions"):
+            risks.append("open_hil_questions")
+        readiness = "approved" if not missing and not risks else "requires_review"
+        return {
+            "artifact_type": "executive_qa_pack",
+            "qa_pack_version": "1.0",
+            "readiness": readiness,
+            "missing_artifacts": missing,
+            "risk_flags": risks,
+            "publication_gate": "permit_draft" if readiness == "approved" else "block_final_publication",
+            "source_modules": ["g14_qa_control"],
+        }
+
+
+class DiagnosticIntelligenceAgent(GovernedAgent):
+    component = "diagnostic_intelligence"
+    subject = "dxpro-diagnostic-intelligence"
+    step = "diagnostic_intelligence_pack"
+    prompt_name = "pmel-diagnostic-intelligence-v1.0"
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        bayesian = payload.get("bayesian_pack") or {}
+        scoring = payload.get("scoring_pack") or {}
+        contrast = payload.get("contrast_pack") or {}
+        qa = payload.get("qa_pack") or {}
+        top = list(bayesian.get("prioritized_hypotheses") or [])[:3]
+        return {
+            "artifact_type": "diagnostic_intelligence_pack",
+            "diagnostic_intelligence_version": "1.0",
+            "overall_score": scoring.get("overall_score"),
+            "maturity_level": scoring.get("maturity_level"),
+            "top_diagnostic_hypotheses": top,
+            "contrast_rows": len(contrast.get("contrast_matrix") or []),
+            "qa_readiness": qa.get("readiness", "not_evaluated"),
+            "recommended_next_step": _next_step(scoring, bayesian, contrast, qa),
+            "inputs_present": {
+                key: bool(payload.get(key))
+                for key in (
+                    "question_bank",
+                    "scoring_pack",
+                    "psychometric_pack",
+                    "irr_pack",
+                    "bayesian_pack",
+                    "hypothesis_pack",
+                    "contrast_pack",
+                    "qa_pack",
+                )
+            },
+        }
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return [value]
+
+
+def _question_for(role: str, dimension: str, pain_points: list[Any]) -> str:
+    pain = str(pain_points[0]) if pain_points else "the current operating model"
+    return (
+        f"For {role}, rate the maturity of {dimension} in relation to {pain} "
+        "and describe the strongest evidence for your rating."
+    )
+
+
+def _numeric_responses(payload: dict[str, Any], default_role: str = "role") -> list[dict[str, Any]]:
+    out = []
+    for index, item in enumerate(payload.get("responses") or payload.get("ratings") or [], start=1):
+        score = item.get("score", item.get("value"))
+        try:
+            numeric = float(score)
+        except (TypeError, ValueError):
+            continue
+        out.append(
+            {
+                "id": item.get("id", f"resp-{index:03d}"),
+                "role": str(item.get("role") or item.get("rater") or default_role),
+                "dimension": str(item.get("dimension") or item.get("item_id") or "overall"),
+                "item_id": item.get("item_id"),
+                "score": numeric,
+            }
+        )
+    return out
+
+
+def _group_average(responses: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    grouped: dict[str, list[float]] = {}
+    for row in responses:
+        if key == "role_dimension":
+            group_key = f"{row['role']}::{row['dimension']}"
+        else:
+            group_key = str(row[key])
+        grouped.setdefault(group_key, []).append(row["score"])
+    return [
+        {"group": group, "average": round(_mean(values), 3), "count": len(values)}
+        for group, values in sorted(grouped.items())
+    ]
+
+
+def _dimension_gaps(responses: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, list[float]]] = {}
+    for row in responses:
+        grouped.setdefault(row["dimension"], {}).setdefault(row["role"], []).append(row["score"])
+    gaps = []
+    for dimension, roles in grouped.items():
+        role_scores = {role: _mean(values) for role, values in roles.items()}
+        if len(role_scores) < 2:
+            continue
+        high_role = max(role_scores, key=role_scores.get)
+        low_role = min(role_scores, key=role_scores.get)
+        gaps.append(
+            {
+                "dimension": dimension,
+                "gap": round(role_scores[high_role] - role_scores[low_role], 3),
+                "highest_role": high_role,
+                "lowest_role": low_role,
+            }
+        )
+    return sorted(gaps, key=lambda row: row["gap"], reverse=True)
+
+
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def _maturity_level(score: float) -> str:
+    if score >= 4.2:
+        return "advanced"
+    if score >= 3.4:
+        return "managed"
+    if score >= 2.6:
+        return "emerging"
+    if score > 0:
+        return "initial"
+    return "insufficient_data"
+
+
+def _response_matrix(payload: dict[str, Any]) -> list[list[float | None]]:
+    matrix = payload.get("response_matrix")
+    if isinstance(matrix, list):
+        return [
+            [float(value) if value is not None else None for value in row]
+            for row in matrix
+            if isinstance(row, list)
+        ]
+    responses = _numeric_responses(payload)
+    respondents = sorted({str(r["role"]) for r in responses})
+    items = sorted({str(r.get("item_id") or r["dimension"]) for r in responses})
+    lookup = {(str(r["role"]), str(r.get("item_id") or r["dimension"])): r["score"] for r in responses}
+    return [[lookup.get((respondent, item)) for item in items] for respondent in respondents]
+
+
+def _cronbach_alpha(matrix: list[list[float | None]]) -> float | None:
+    complete = [[value for value in row if value is not None] for row in matrix]
+    complete = [row for row in complete if len(row) >= 2]
+    if len(complete) < 2:
+        return None
+    item_count = min(len(row) for row in complete)
+    trimmed = [row[:item_count] for row in complete]
+    if item_count < 2:
+        return None
+    columns = [[row[i] for row in trimmed] for i in range(item_count)]
+    item_variance = sum(statistics.pvariance(column) for column in columns)
+    totals = [sum(row) for row in trimmed]
+    total_variance = statistics.pvariance(totals)
+    if total_variance == 0:
+        return None
+    return (item_count / (item_count - 1)) * (1 - item_variance / total_variance)
+
+
+def _completion_ratio(matrix: list[list[float | None]]) -> float:
+    cells = [value for row in matrix for value in row]
+    if not cells:
+        return 0.0
+    return len([value for value in cells if value is not None]) / len(cells)
+
+
+def _clamp_probability(value: float) -> float:
+    return min(max(value, 0.01), 0.99)
+
+
+def _bayes_update(prior: float, likelihood_ratio: float) -> float:
+    odds = prior / (1 - prior)
+    posterior_odds = odds * max(likelihood_ratio, 0.01)
+    return posterior_odds / (1 + posterior_odds)
+
+
+def _posterior_confidence(posterior: float) -> str:
+    if posterior >= 0.75:
+        return "high"
+    if posterior >= 0.55:
+        return "medium"
+    return "low"
+
+
+def _hypotheses_from_scoring(scoring_pack: dict[str, Any]) -> list[dict[str, Any]]:
+    hypotheses = []
+    for index, gap in enumerate(scoring_pack.get("largest_role_gaps") or [], start=1):
+        hypotheses.append(
+            {
+                "id": f"DH{index}",
+                "statement": f"Role perception gap in {gap.get('dimension')} is a diagnostic bottleneck.",
+                "prior": 0.6 if gap.get("gap", 0) >= 1 else 0.5,
+            }
+        )
+    return hypotheses
+
+
+def _next_step(
+    scoring: dict[str, Any],
+    bayesian: dict[str, Any],
+    contrast: dict[str, Any],
+    qa: dict[str, Any],
+) -> str:
+    if qa.get("readiness") == "requires_review":
+        return "resolve_qa_findings"
+    if contrast.get("recommended_hil_questions"):
+        return "run_hil_contrast_review"
+    if bayesian.get("top_hypothesis_id"):
+        return "generate_to_be_blueprint"
+    if scoring.get("overall_score") is None:
+        return "capture_more_responses"
+    return "proceed_to_consultant_review"

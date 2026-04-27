@@ -293,6 +293,14 @@ class PolicyEngine:
             "dmn_engine": "A2",
             "crypto_participant": "A2",
             "rgc_hypothesis_builder": "A2",
+            "rgc_deep_research_contraster": "A2",
+            "adaptive_question_bank": "A2",
+            "multi_role_scoring": "A2",
+            "psychometrics": "A2",
+            "irr_reliability": "A2",
+            "bayesian_synthesis": "A2",
+            "executive_qa": "A2",
+            "diagnostic_intelligence": "A2",
             "diagnostic_agent": "A2",
         }
         if violations >= 3:
@@ -344,7 +352,25 @@ class PolicyEngine:
         current_cycle = int(execution.get("current_cycle", 0))
         last_outcome = execution.get("last_outcome", "in_progress")
         request_another = bool(execution.get("request_another_cycle", False))
-        limits = {"capture_agent": 5, "to_be_generator": 3, "visual_interpreter": 1, "lint_agent": 3, "bpmn_lint_agent": 3, "dmn_engine": 1, "crypto_participant": 1, "diagnostic_agent": 5}
+        limits = {
+            "capture_agent": 5,
+            "to_be_generator": 3,
+            "visual_interpreter": 1,
+            "lint_agent": 3,
+            "bpmn_lint_agent": 3,
+            "dmn_engine": 1,
+            "crypto_participant": 1,
+            "rgc_hypothesis_builder": 1,
+            "rgc_deep_research_contraster": 1,
+            "adaptive_question_bank": 2,
+            "multi_role_scoring": 2,
+            "psychometrics": 1,
+            "irr_reliability": 1,
+            "bayesian_synthesis": 2,
+            "executive_qa": 1,
+            "diagnostic_intelligence": 2,
+            "diagnostic_agent": 5,
+        }
         limit = limits.get(component, 1)
         if current_cycle >= limit and last_outcome == "failed":
             return PolicyDecision(package, "SUSPEND", "cycle_exhausted_with_failure", {"component": component})

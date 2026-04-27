@@ -1,8 +1,8 @@
-# PMEL Cycle Limits — Agent iteration caps
+# PMEL Cycle Limits - Agent iteration caps
 # Package: arhia.pmel.governance.cycle_limits
-# Source: Paso 2 Prompts §1.5 (Capture), §4.5 (TO-BE); TR-032 D-10
-# Enforces: Capture-Agent max 5 ciclos antes de escalar; TO-BE max 3 ciclos con Lint antes de unable_to_resolve_critical
-# ARHIA Controls: C18 (kill-switch / pausa por agente)
+# Source: Paso 2 Prompts section 1.5 (Capture), section 4.5 (TO-BE); TR-032 D-10
+# Enforces: Capture-Agent max 5 cycles before escalation; TO-BE max 3 cycles with Lint.
+# ARHIA Controls: C18 (kill-switch / pause by agent)
 
 package arhia.pmel.governance.cycle_limits
 
@@ -13,17 +13,21 @@ default decision := {"outcome": "AUDIT", "reason": "cycle_limits_not_triggered"}
 # Limits per component
 limits := {
     "capture_agent": 5,
-    "visual_interpreter": 1,  # one-shot
+    "visual_interpreter": 1,
     "to_be_generator": 3,
-    "bpmn_lint_agent": 3  # ciclos Generator↔Lint
+    "bpmn_lint_agent": 3,
+    "dmn_engine": 1,
+    "crypto_participant": 1,
+    "rgc_hypothesis_builder": 1,
+    "rgc_deep_research_contraster": 1,
+    "adaptive_question_bank": 2,
+    "multi_role_scoring": 2,
+    "psychometrics": 1,
+    "irr_reliability": 1,
+    "bayesian_synthesis": 2,
+    "executive_qa": 1,
+    "diagnostic_intelligence": 2
 }
-
-# input.execution = {
-#   "component": "to_be_generator",
-#   "current_cycle": 3,
-#   "total_cycles_elapsed": 3,
-#   "last_outcome": "failed"
-# }
 
 current_component := input.execution.component
 current_cycle := input.execution.current_cycle
@@ -34,10 +38,10 @@ deny[msg] if {
     current_component in object.keys(limits)
     current_cycle >= limit_for_component
     input.execution.request_another_cycle == true
-    msg := sprintf("Cycle limit reached: component %v at cycle %v of max %v — cannot continue (D-10, C18)", [current_component, current_cycle, limit_for_component])
+    msg := sprintf("Cycle limit reached: component %v at cycle %v of max %v - cannot continue (D-10, C18)", [current_component, current_cycle, limit_for_component])
 }
 
-# SUSPEND: component reached limit with failed outcome → kill-switch
+# SUSPEND: component reached limit with failed outcome
 suspend[msg] if {
     current_component in object.keys(limits)
     current_cycle >= limit_for_component
@@ -49,7 +53,7 @@ suspend[msg] if {
 escalate[msg] if {
     current_component in object.keys(limits)
     current_cycle == (limit_for_component - 1)
-    msg := sprintf("Component %v on final cycle (%v of %v) — prepare escalation to Consultor if this fails", [current_component, current_cycle, limit_for_component])
+    msg := sprintf("Component %v on final cycle (%v of %v) - prepare escalation to Consultor if this fails", [current_component, current_cycle, limit_for_component])
 }
 
 # PERMIT: within limits

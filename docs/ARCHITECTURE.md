@@ -51,7 +51,7 @@ flowchart LR
 | `policy.py` | Policy evaluation through OPA or native fallback |
 | `runtime.py` | PMEL step orchestration and ATK aggregation |
 | `capture_agent.py` | First governed PMEL agent stub for process interview intake |
-| `pro_agents.py` | Governed DX Pro agents for TO-BE generation, BPMN lint, visual interpretation, DMN evaluation and crypto decommissioning plans |
+| `pro_agents.py` | Governed DX Pro agents for TO-BE generation, BPMN lint, visual interpretation, DMN evaluation, crypto decommissioning, RGC research, adaptive questions, scoring, psychometrics, IRR, Bayesian synthesis, executive QA and diagnostic intelligence |
 | `evidence.py` | Append-only HMAC ledger with interprocess file lock |
 | `provenance.py` | HMAC-SHA256 provenance certificates |
 | `api.py` | FastAPI application surface |
@@ -75,6 +75,15 @@ flowchart LR
 | `POST /v1/agents/visual-interpret` | Governed visual process interpretation |
 | `POST /v1/agents/dmn/evaluate` | Governed DMN table evaluation |
 | `POST /v1/agents/crypto/decommission` | Governed decommissioning plan |
+| `POST /v1/agents/research/build-hypothesis-pack` | Governed RGC hypothesis pack from papers and patents |
+| `POST /v1/agents/research/deep-contrast` | Governed grey-literature contrast for RGC hypotheses |
+| `POST /v1/agents/questions/adaptive-bank` | Governed adaptive question bank generation |
+| `POST /v1/agents/scoring/multi-role` | Governed multi-role diagnostic scoring |
+| `POST /v1/agents/psychometrics/evaluate` | Governed psychometric quality evaluation |
+| `POST /v1/agents/reliability/irr` | Governed inter-rater reliability evaluation |
+| `POST /v1/agents/synthesis/bayesian` | Governed Bayesian diagnostic synthesis |
+| `POST /v1/agents/qa/executive` | Governed executive QA and publication readiness |
+| `POST /v1/agents/diagnostic/intelligence-pack` | Governed integrated diagnostic intelligence pack |
 | `GET /v1/evidence` | Recent evidence entries |
 | `GET /v1/evidence?trace_id={trace_id}` | Evidence by trace |
 | `GET /v1/pmel/runs/{trace_id}` | Trace run view |
@@ -99,6 +108,22 @@ Full-bundle execution is available by passing `scope="full_bundle"` to `POST /v1
 ## Pro Agent Execution
 
 Each Pro agent uses the same PMEL/ATK control path before producing output. The agent pre-execution chain validates autonomy, consent, AIBOM and cycle limits. If the aggregate outcome is not allowed, the response returns no artifact. If allowed, the agent writes an additional `agent_artifact` ledger entry bound to the same trace.
+
+## Dx Agent Fusion Layer
+
+DX Pro remains the runtime core. The conceptual strengths of ARHIAX DX are now represented as governed Pro agents rather than as an external dependency:
+
+| Capability | Governed DX Pro Agent | Migrated DX source logic |
+|---|---|---|
+| Adaptive question bank | `AdaptiveQuestionBankAgent` | `g09a_preguntas`, `g09b_ramificacion`, `g09c_validacion` |
+| Multi-role scoring | `MultiRoleScoringAgent` | `g10a_scoring`, `scoring_engine` |
+| Psychometrics | `PsychometricsAgent` | `g10b_psicometria` |
+| Inter-rater reliability | `IrrReliabilityAgent` | `irr_calculator` |
+| Bayesian synthesis | `BayesianSynthesisAgent` | `g11a_bayesiano` |
+| Executive QA | `ExecutiveQaAgent` | `g14_qa_control` |
+| Integrated intelligence | `DiagnosticIntelligenceAgent` | synthesis layer over scoring, IRR, Bayesian, RGC, contrast and QA |
+
+The fusion rule is strict: migrated capabilities execute inside `dxpro_runtime`, pass through PMEL/ATK, write evidence, and do not import `arhiax_dx`.
 
 ## Evidence Model
 

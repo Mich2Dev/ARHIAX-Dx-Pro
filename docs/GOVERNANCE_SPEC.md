@@ -66,8 +66,19 @@ DX Pro Pro agents must execute through PMEL pre-execution controls before genera
 - `PmelVisualInterpreter`
 - `DmnEngine`
 - `CryptoParticipant`
+- `RgcAgent`
+- `RgcDeepResearchContrasterAgent`
+- `AdaptiveQuestionBankAgent`
+- `MultiRoleScoringAgent`
+- `PsychometricsAgent`
+- `IrrReliabilityAgent`
+- `BayesianSynthesisAgent`
+- `ExecutiveQaAgent`
+- `DiagnosticIntelligenceAgent`
 
 The artifact is blocked when PMEL returns `DENY`, `ESCALATE` or `SUSPEND`. Permitted executions record an `agent_artifact` evidence event after the individual policy decisions and aggregate evidence.
+
+The fused diagnostic agents keep DX Pro as the execution boundary. They add organizational diagnostic depth from ARHIAX DX while preserving PMEL/ATK controls, AIBOM declaration, cycle limits, consent gates and evidence logging.
 
 ## Autonomy
 

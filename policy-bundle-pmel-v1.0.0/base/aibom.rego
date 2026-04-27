@@ -23,6 +23,7 @@ required_release_fields := {
 
 # Allowed LLM model identifiers for PMEL
 allowed_models := {
+    "claude-sonnet-4-6",
     "claude-sonnet-4-7",
     "claude-opus-4-7",
     "whisper-large-v3-latam"
@@ -35,7 +36,16 @@ allowed_prompts := {
     "pmel-to-be-generator-v1.0",
     "pmel-bpmn-lint-agent-v1.0",
     "pmel-dmn-engine-v1.0",
-    "pmel-crypto-participant-v1.0"
+    "pmel-crypto-participant-v1.0",
+    "pmel-rgc-hypothesis-builder-v1.0",
+    "pmel-rgc-deep-research-contraster-v1.0",
+    "pmel-adaptive-question-bank-v1.0",
+    "pmel-multi-role-scoring-v1.0",
+    "pmel-psychometrics-v1.0",
+    "pmel-irr-reliability-v1.0",
+    "pmel-bayesian-synthesis-v1.0",
+    "pmel-executive-qa-v1.0",
+    "pmel-diagnostic-intelligence-v1.0"
 }
 
 default decision := {"outcome": "DENY", "reason": "aibom_validation_failed"}

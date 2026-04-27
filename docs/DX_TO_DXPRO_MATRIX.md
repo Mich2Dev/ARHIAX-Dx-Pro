@@ -17,6 +17,20 @@ This matrix records how DX Pro covers the ARHIAX DX product surface while remain
 | Human approval | Publication and critical gates | Publication, IRR, delta sigma and PMEL escalation |
 | Install readiness | Client deployment checklist | Standalone DX Pro binding blueprint |
 
+## Fusion Addendum
+
+DX Pro now keeps its standalone runtime and absorbs selected DX diagnostic capabilities as governed Pro agents.
+
+| DX Capability | DX Pro Fusion Agent | Result |
+|---|---|---|
+| `g09a_preguntas`, `g09b_ramificacion`, `g09c_validacion` | `AdaptiveQuestionBankAgent` | Adaptive question banks with validation and branching rules |
+| `g10a_scoring`, `scoring_engine` | `MultiRoleScoringAgent` | Multi-role scoring by role, dimension and role gap |
+| `g10b_psicometria` | `PsychometricsAgent` | Psychometric quality pack with internal consistency and completeness |
+| `irr_calculator` | `IrrReliabilityAgent` | Inter-rater reliability pack with agreement index |
+| `g11a_bayesiano` | `BayesianSynthesisAgent` | Prioritized diagnostic hypotheses with Bayesian posterior updates |
+| `g14_qa_control` | `ExecutiveQaAgent` | Executive readiness gate and publication blocking flags |
+| `g12_hallazgos` style synthesis | `DiagnosticIntelligenceAgent` | Integrated intelligence pack over scoring, Bayesian, RGC, contrast and QA |
+
 ## Independence Rule
 
 DX Pro may reuse ideas from DX, but must not import, subclass or require `arhiax_dx`.

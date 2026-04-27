@@ -67,6 +67,14 @@ class DxProCatalog:
             ("dmn_engine", "decision_modeling", "HIGH"),
             ("crypto_participant", "decommissioning", "CRITICAL"),
             ("rgc_hypothesis_builder", "research_grounding", "HIGH"),
+            ("rgc_deep_research_contraster", "research_contrast", "HIGH"),
+            ("adaptive_question_bank", "survey_design", "HIGH"),
+            ("multi_role_scoring", "analysis", "HIGH"),
+            ("psychometrics", "analysis", "HIGH"),
+            ("irr_reliability", "analysis", "HIGH"),
+            ("bayesian_synthesis", "analysis", "HIGH"),
+            ("executive_qa", "qa", "CRITICAL"),
+            ("diagnostic_intelligence", "synthesis", "CRITICAL"),
         ]
         tools: list[dict[str, Any]] = []
         for name, phase, severity in base_tools + pro_tools:
@@ -91,6 +99,9 @@ class DxProCatalog:
             "bpmn_models",
             "decision_tables",
             "execution_evidence",
+            "psychometric_metrics",
+            "scoring_outputs",
+            "diagnostic_intelligence",
         ]
         return [{"name": name, "retention_max_days": 30} for name in names]
 
@@ -104,6 +115,13 @@ class DxProCatalog:
             "bpmnGenerate",
             "reportDraft",
             "certificateIssue",
+            "questionBankBuild",
+            "multiRoleScore",
+            "psychometricEvaluate",
+            "irrEvaluate",
+            "bayesianSynthesize",
+            "executiveQa",
+            "diagnosticIntegrate",
         ]
         return [{"name": name, "enabled": True} for name in names]
 
