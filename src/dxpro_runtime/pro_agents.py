@@ -36,7 +36,8 @@ class GovernedAgent:
         if not step.allowed:
             return result
 
-        artifact = self._build_artifact(payload)
+        artifact_payload = {**payload, "trace_id": step.trace_id}
+        artifact = self._build_artifact(artifact_payload)
         evidence = self.runtime.ledger.append(
             {
                 "trace_id": step.trace_id,
@@ -783,6 +784,175 @@ class DiagnosticIntelligenceAgent(GovernedAgent):
         }
 
 
+class DiagnosticFusionCycleAgent(GovernedAgent):
+    component = "diagnostic_fusion_cycle"
+    subject = "dxpro-diagnostic-fusion-cycle"
+    step = "diagnostic_fusion_cycle"
+    prompt_name = "pmel-diagnostic-fusion-cycle-v1.0"
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        consent = payload.get("consent", {"action": "ingest_to_llm", "consents": {}})
+        trace_id = str(payload.get("trace_id", ""))
+        child_base = {
+            "trace_id": trace_id,
+            "consent": consent,
+            "engagement_id": payload.get("engagement_id", "unknown"),
+            "domain": payload.get("domain", ""),
+        }
+
+        children: dict[str, GovernedAgent] = {
+            "question_bank": AdaptiveQuestionBankAgent(self.runtime, self.llm_client),
+            "scoring": MultiRoleScoringAgent(self.runtime, self.llm_client),
+            "psychometrics": PsychometricsAgent(self.runtime, self.llm_client),
+            "irr": IrrReliabilityAgent(self.runtime, self.llm_client),
+            "bayesian": BayesianSynthesisAgent(self.runtime, self.llm_client),
+            "rgc": RgcAgent(self.runtime, self.llm_client),
+            "deep_contrast": RgcDeepResearchContrasterAgent(self.runtime, self.llm_client),
+            "to_be": PmelToBeGenerator(self.runtime, self.llm_client),
+            "bpmn_lint": PmelBpmnLintAgent(self.runtime, self.llm_client),
+            "executive_qa": ExecutiveQaAgent(self.runtime, self.llm_client),
+            "intelligence": DiagnosticIntelligenceAgent(self.runtime, self.llm_client),
+        }
+
+        question_bank = children["question_bank"].execute(
+            {
+                **child_base,
+                "roles": payload.get("roles"),
+                "dimensions": payload.get("dimensions"),
+                "pain_points": payload.get("pain_points", []),
+            }
+        )
+        scoring = children["scoring"].execute(
+            {**child_base, "responses": payload.get("responses", [])}
+        )
+        psychometrics = children["psychometrics"].execute(
+            {
+                **child_base,
+                "responses": payload.get("responses", []),
+                "response_matrix": payload.get("response_matrix"),
+            }
+        )
+        irr = children["irr"].execute(
+            {**child_base, "ratings": payload.get("ratings") or payload.get("responses", [])}
+        )
+
+        scoring_pack = _artifact(scoring)
+        psychometric_pack = _artifact(psychometrics)
+        irr_pack = _artifact(irr)
+        bayesian = children["bayesian"].execute(
+            {
+                **child_base,
+                "hypotheses": payload.get("diagnostic_hypotheses", []),
+                "evidence_signals": payload.get("evidence_signals", []),
+                "scoring_pack": scoring_pack,
+            }
+        )
+        bayesian_pack = _artifact(bayesian)
+
+        rgc = children["rgc"].execute(
+            {
+                **child_base,
+                "pain_points": payload.get("pain_points", []),
+                "openalex": payload.get("openalex"),
+                "lens": payload.get("lens"),
+            }
+        )
+        hypothesis_pack = dict(payload.get("hypothesis_pack") or _artifact(rgc) or {})
+        deep_contrast = children["deep_contrast"].execute(
+            {
+                **child_base,
+                "pain_points": payload.get("pain_points", []),
+                "hypothesis_pack": hypothesis_pack,
+                "grey_sources": payload.get("grey_sources", []),
+                "urls": payload.get("urls", []),
+            }
+        )
+        contrast_pack = _artifact(deep_contrast)
+
+        to_be = children["to_be"].execute(
+            {
+                **child_base,
+                "as_is_activities": payload.get("as_is_activities") or _activities_from_responses(payload),
+                "as_is_bpmn": payload.get("as_is_bpmn", ""),
+                "as_is_prose": payload.get("as_is_prose", {}),
+                "hypothesis_pack": hypothesis_pack,
+                "lint_report": payload.get("lint_report"),
+            }
+        )
+        to_be_pack = _artifact(to_be)
+
+        bpmn_lint = children["bpmn_lint"].execute(
+            {
+                **child_base,
+                "bpmn_model": payload.get("bpmn_model", {}),
+            }
+        )
+        qa = children["executive_qa"].execute(
+            {
+                **child_base,
+                "scoring_pack": scoring_pack,
+                "psychometric_pack": psychometric_pack,
+                "irr_pack": irr_pack,
+                "bayesian_pack": bayesian_pack,
+                "hypothesis_pack": hypothesis_pack,
+                "contrast_pack": contrast_pack,
+                "to_be_pack": to_be_pack,
+            }
+        )
+        qa_pack = _artifact(qa)
+        intelligence = children["intelligence"].execute(
+            {
+                **child_base,
+                "question_bank": _artifact(question_bank),
+                "scoring_pack": scoring_pack,
+                "psychometric_pack": psychometric_pack,
+                "irr_pack": irr_pack,
+                "bayesian_pack": bayesian_pack,
+                "hypothesis_pack": hypothesis_pack,
+                "contrast_pack": contrast_pack,
+                "qa_pack": qa_pack,
+            }
+        )
+
+        stages = {
+            "question_bank": _stage_summary(question_bank),
+            "scoring": _stage_summary(scoring),
+            "psychometrics": _stage_summary(psychometrics),
+            "irr": _stage_summary(irr),
+            "bayesian": _stage_summary(bayesian),
+            "rgc": _stage_summary(rgc),
+            "deep_contrast": _stage_summary(deep_contrast),
+            "to_be": _stage_summary(to_be),
+            "bpmn_lint": _stage_summary(bpmn_lint),
+            "executive_qa": _stage_summary(qa),
+            "diagnostic_intelligence": _stage_summary(intelligence),
+        }
+        blocked = [name for name, stage in stages.items() if stage["outcome"] != "PERMIT"]
+        return {
+            "artifact_type": "diagnostic_fusion_cycle_pack",
+            "fusion_cycle_version": "1.0",
+            "engagement_id": payload.get("engagement_id", "unknown"),
+            "domain": payload.get("domain", ""),
+            "stage_count": len(stages),
+            "blocked_stages": blocked,
+            "cycle_status": "completed" if not blocked else "completed_with_blocked_stages",
+            "stages": stages,
+            "artifacts": {
+                "question_bank": _artifact(question_bank),
+                "scoring_pack": scoring_pack,
+                "psychometric_pack": psychometric_pack,
+                "irr_pack": irr_pack,
+                "bayesian_pack": bayesian_pack,
+                "hypothesis_pack": hypothesis_pack,
+                "contrast_pack": contrast_pack,
+                "to_be_pack": to_be_pack,
+                "bpmn_lint_pack": _artifact(bpmn_lint),
+                "executive_qa_pack": qa_pack,
+                "diagnostic_intelligence_pack": _artifact(intelligence),
+            },
+        }
+
+
 def _as_list(value: Any) -> list[Any]:
     if value is None:
         return []
@@ -791,6 +961,36 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, tuple):
         return list(value)
     return [value]
+
+
+def _artifact(result: dict[str, Any]) -> dict[str, Any] | None:
+    artifact = result.get("artifact")
+    return artifact if isinstance(artifact, dict) else None
+
+
+def _stage_summary(result: dict[str, Any]) -> dict[str, Any]:
+    artifact = _artifact(result)
+    return {
+        "agent": result.get("agent"),
+        "outcome": result.get("outcome"),
+        "reason": result.get("reason"),
+        "artifact_type": artifact.get("artifact_type") if artifact else None,
+        "artifact_evidence_id": result.get("artifact_evidence_id"),
+    }
+
+
+def _activities_from_responses(payload: dict[str, Any]) -> list[dict[str, str]]:
+    activities = []
+    for index, response in enumerate(payload.get("responses") or [], start=1):
+        dimension = response.get("dimension") or "diagnostic dimension"
+        role = response.get("role") or "role"
+        activities.append(
+            {
+                "id": f"asis-{index:03d}",
+                "label": f"Assess {dimension} with {role}",
+            }
+        )
+    return activities
 
 
 def _question_for(role: str, dimension: str, pain_points: list[Any]) -> str:

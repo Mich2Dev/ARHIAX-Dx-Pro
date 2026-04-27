@@ -75,10 +75,13 @@ DX Pro Pro agents must execute through PMEL pre-execution controls before genera
 - `BayesianSynthesisAgent`
 - `ExecutiveQaAgent`
 - `DiagnosticIntelligenceAgent`
+- `DiagnosticFusionCycleAgent`
 
 The artifact is blocked when PMEL returns `DENY`, `ESCALATE` or `SUSPEND`. Permitted executions record an `agent_artifact` evidence event after the individual policy decisions and aggregate evidence.
 
 The fused diagnostic agents keep DX Pro as the execution boundary. They add organizational diagnostic depth from ARHIAX DX while preserving PMEL/ATK controls, AIBOM declaration, cycle limits, consent gates and evidence logging.
+
+`DiagnosticFusionCycleAgent` is the governed orchestrator for the fusion layer. It does not bypass child controls: every child agent still runs its own PMEL pre-execution chain and writes its own artifact evidence under the parent trace.
 
 ## Autonomy
 

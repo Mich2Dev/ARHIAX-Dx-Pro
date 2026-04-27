@@ -36,6 +36,21 @@ def _responses() -> list[dict]:
     ]
 
 
+def _bpmn_model() -> dict:
+    return {
+        "nodes": [
+            {"id": "start", "type": "start_event", "name": "Inicio"},
+            {"id": "t1", "type": "task", "name": "Validar pedido"},
+            {"id": "end", "type": "end_event", "name": "Fin"},
+        ],
+        "edges": [
+            {"source": "start", "target": "t1"},
+            {"source": "t1", "target": "end"},
+        ],
+        "prose": {"flow": "Se inicia el proceso, se valida el pedido y se finaliza."},
+    }
+
+
 def test_fusion_agent_endpoints_are_governed_and_return_artifacts(tmp_path: Path) -> None:
     client = _client(tmp_path)
 
@@ -148,3 +163,51 @@ def test_fusion_agent_denies_without_consent(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["outcome"] == "DENY"
     assert response.json()["artifact"] is None
+
+
+def test_diagnostic_fusion_cycle_orchestrates_child_agents(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/v1/agents/diagnostic/run-fusion-cycle",
+        json={
+            "consent": _consent(),
+            "engagement_id": "eng-cycle-001",
+            "domain": "customs agency innovation",
+            "roles": ["executive", "operations", "technology"],
+            "dimensions": ["strategy", "process", "technology"],
+            "responses": _responses(),
+            "response_matrix": [[4, 3, 3], [2, 2, 2], [3, 4, 4]],
+            "diagnostic_hypotheses": [
+                {"id": "DH1", "statement": "Technology traceability is a bottleneck.", "prior": 0.55}
+            ],
+            "evidence_signals": [
+                {"id": "sig-1", "hypothesis_ids": ["DH1"], "likelihood_ratio": 1.6}
+            ],
+            "hypothesis_pack": {
+                "hypothesis_pack_version": "1.0",
+                "engagement_id": "eng-cycle-001",
+                "domain": "customs agency innovation",
+                "hypotheses": [{"id": "H1", "statement": "Reduce manual handoffs."}],
+            },
+            "grey_sources": [
+                {
+                    "id": "grey-cycle-001",
+                    "title": "Customs operations benchmark",
+                    "content": "Manual handoffs increase customs clearance cycle time.",
+                }
+            ],
+            "bpmn_model": _bpmn_model(),
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outcome"] == "PERMIT"
+    artifact = body["artifact"]
+    assert artifact["artifact_type"] == "diagnostic_fusion_cycle_pack"
+    assert artifact["stage_count"] == 11
+    assert artifact["artifacts"]["question_bank"]["artifact_type"] == "question_bank_pack"
+    assert artifact["artifacts"]["scoring_pack"]["artifact_type"] == "multi_role_scoring_pack"
+    assert artifact["artifacts"]["bayesian_pack"]["top_hypothesis_id"] == "DH1"
+    assert artifact["artifacts"]["diagnostic_intelligence_pack"]["artifact_type"] == "diagnostic_intelligence_pack"

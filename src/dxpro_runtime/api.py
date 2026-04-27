@@ -20,6 +20,7 @@ from .pro_agents import (
     BayesianSynthesisAgent,
     CryptoParticipant,
     DiagnosticIntelligenceAgent,
+    DiagnosticFusionCycleAgent,
     DmnEngine,
     ExecutiveQaAgent,
     IrrReliabilityAgent,
@@ -85,6 +86,7 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
         "bayesian_synthesis": BayesianSynthesisAgent(runtime, llm_client),
         "executive_qa": ExecutiveQaAgent(runtime, llm_client),
         "diagnostic_intelligence": DiagnosticIntelligenceAgent(runtime, llm_client),
+        "diagnostic_fusion_cycle": DiagnosticFusionCycleAgent(runtime, llm_client),
     }
     diagnostics = DiagnosticService(config, catalog, runtime)
 
@@ -143,6 +145,7 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
                 "POST /v1/agents/synthesis/bayesian",
                 "POST /v1/agents/qa/executive",
                 "POST /v1/agents/diagnostic/intelligence-pack",
+                "POST /v1/agents/diagnostic/run-fusion-cycle",
             ],
         }
 
@@ -293,6 +296,11 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     @app.post("/v1/dxpro/agents/diagnostic/intelligence-pack", dependencies=protected)
     def build_diagnostic_intelligence_pack(request: AgentExecuteRequest) -> dict[str, Any]:
         return pro_agents["diagnostic_intelligence"].execute(request.to_payload())
+
+    @app.post("/v1/agents/diagnostic/run-fusion-cycle", dependencies=protected)
+    @app.post("/v1/dxpro/agents/diagnostic/run-fusion-cycle", dependencies=protected)
+    def run_diagnostic_fusion_cycle(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["diagnostic_fusion_cycle"].execute(request.to_payload())
 
     return app
 

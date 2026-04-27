@@ -301,6 +301,7 @@ class PolicyEngine:
             "bayesian_synthesis": "A2",
             "executive_qa": "A2",
             "diagnostic_intelligence": "A2",
+            "diagnostic_fusion_cycle": "A2",
             "diagnostic_agent": "A2",
         }
         if violations >= 3:
@@ -369,6 +370,7 @@ class PolicyEngine:
             "bayesian_synthesis": 2,
             "executive_qa": 1,
             "diagnostic_intelligence": 2,
+            "diagnostic_fusion_cycle": 1,
             "diagnostic_agent": 5,
         }
         limit = limits.get(component, 1)

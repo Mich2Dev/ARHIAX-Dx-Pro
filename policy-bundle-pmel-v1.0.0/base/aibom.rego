@@ -45,7 +45,8 @@ allowed_prompts := {
     "pmel-irr-reliability-v1.0",
     "pmel-bayesian-synthesis-v1.0",
     "pmel-executive-qa-v1.0",
-    "pmel-diagnostic-intelligence-v1.0"
+    "pmel-diagnostic-intelligence-v1.0",
+    "pmel-diagnostic-fusion-cycle-v1.0"
 }
 
 default decision := {"outcome": "DENY", "reason": "aibom_validation_failed"}

@@ -75,6 +75,7 @@ class DxProCatalog:
             ("bayesian_synthesis", "analysis", "HIGH"),
             ("executive_qa", "qa", "CRITICAL"),
             ("diagnostic_intelligence", "synthesis", "CRITICAL"),
+            ("diagnostic_fusion_cycle", "orchestration", "CRITICAL"),
         ]
         tools: list[dict[str, Any]] = []
         for name, phase, severity in base_tools + pro_tools:
@@ -122,6 +123,7 @@ class DxProCatalog:
             "bayesianSynthesize",
             "executiveQa",
             "diagnosticIntegrate",
+            "diagnosticFusionCycle",
         ]
         return [{"name": name, "enabled": True} for name in names]
 

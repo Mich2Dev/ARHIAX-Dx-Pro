@@ -84,6 +84,7 @@ flowchart LR
 | `POST /v1/agents/synthesis/bayesian` | Governed Bayesian diagnostic synthesis |
 | `POST /v1/agents/qa/executive` | Governed executive QA and publication readiness |
 | `POST /v1/agents/diagnostic/intelligence-pack` | Governed integrated diagnostic intelligence pack |
+| `POST /v1/agents/diagnostic/run-fusion-cycle` | Governed end-to-end diagnostic fusion cycle orchestration |
 | `GET /v1/evidence` | Recent evidence entries |
 | `GET /v1/evidence?trace_id={trace_id}` | Evidence by trace |
 | `GET /v1/pmel/runs/{trace_id}` | Trace run view |
@@ -122,8 +123,27 @@ DX Pro remains the runtime core. The conceptual strengths of ARHIAX DX are now r
 | Bayesian synthesis | `BayesianSynthesisAgent` | `g11a_bayesiano` |
 | Executive QA | `ExecutiveQaAgent` | `g14_qa_control` |
 | Integrated intelligence | `DiagnosticIntelligenceAgent` | synthesis layer over scoring, IRR, Bayesian, RGC, contrast and QA |
+| End-to-end orchestration | `DiagnosticFusionCycleAgent` | executes the governed fusion chain under one trace |
 
 The fusion rule is strict: migrated capabilities execute inside `dxpro_runtime`, pass through PMEL/ATK, write evidence, and do not import `arhiax_dx`.
+
+## Diagnostic Fusion Cycle
+
+`DiagnosticFusionCycleAgent` orchestrates the fused diagnostic chain:
+
+1. adaptive question bank
+2. multi-role scoring
+3. psychometric quality
+4. inter-rater reliability
+5. Bayesian synthesis
+6. RGC hypothesis builder
+7. deep research contrast
+8. TO-BE generation
+9. BPMN lint
+10. executive QA
+11. diagnostic intelligence pack
+
+The parent cycle and every child stage execute PMEL pre-checks and write evidence under the same trace.
 
 ## Evidence Model
 

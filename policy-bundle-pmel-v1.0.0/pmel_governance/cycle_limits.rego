@@ -26,7 +26,8 @@ limits := {
     "irr_reliability": 1,
     "bayesian_synthesis": 2,
     "executive_qa": 1,
-    "diagnostic_intelligence": 2
+    "diagnostic_intelligence": 2,
+    "diagnostic_fusion_cycle": 1
 }
 
 current_component := input.execution.component
