@@ -150,6 +150,10 @@ def test_bayesian_qa_and_intelligence_pack_integration(tmp_path: Path) -> None:
     assert intelligence.status_code == 200
     assert intelligence.json()["artifact"]["artifact_type"] == "diagnostic_intelligence_pack"
     assert intelligence.json()["artifact"]["recommended_next_step"] == "generate_to_be_blueprint"
+    assert intelligence.json()["artifact"]["diagnostic_intelligence_version"] == "1.1"
+    assert intelligence.json()["artifact"]["executive_summary"]["decision_posture"] == "ready_for_tobe"
+    assert intelligence.json()["artifact"]["priority_themes"]
+    assert intelligence.json()["artifact"]["initiative_portfolio"]
 
 
 def test_fusion_agent_denies_without_consent(tmp_path: Path) -> None:
@@ -211,3 +215,64 @@ def test_diagnostic_fusion_cycle_orchestrates_child_agents(tmp_path: Path) -> No
     assert artifact["artifacts"]["scoring_pack"]["artifact_type"] == "multi_role_scoring_pack"
     assert artifact["artifacts"]["bayesian_pack"]["top_hypothesis_id"] == "DH1"
     assert artifact["artifacts"]["diagnostic_intelligence_pack"]["artifact_type"] == "diagnostic_intelligence_pack"
+    assert artifact["executive_summary"]["diagnostic_thesis"] == "Technology traceability is a bottleneck."
+    assert artifact["recommended_next_step"] == "generate_to_be_blueprint"
+    assert artifact["risk_signal_count"] >= 1
+
+
+def test_diagnostic_intelligence_flags_quality_risks(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/v1/agents/diagnostic/intelligence-pack",
+        json={
+            "consent": _consent(),
+            "scoring_pack": {
+                "overall_score": 2.1,
+                "maturity_level": "initial",
+                "largest_role_gaps": [
+                    {
+                        "dimension": "technology",
+                        "gap": 2.0,
+                        "highest_role": "technology",
+                        "lowest_role": "operations",
+                    }
+                ],
+            },
+            "psychometric_pack": {"cronbach_alpha": 0.62, "quality_status": "review"},
+            "irr_pack": {"agreement_index": 0.63, "reliability_status": "review"},
+            "bayesian_pack": {
+                "top_hypothesis_id": "DH1",
+                "prioritized_hypotheses": [
+                    {
+                        "id": "DH1",
+                        "statement": "Technology traceability is limiting operational control.",
+                        "posterior": 0.78,
+                    }
+                ],
+            },
+            "contrast_pack": {
+                "contrast_matrix": [
+                    {
+                        "hypothesis_id": "H1",
+                        "support_level": "moderate",
+                        "requires_hil": True,
+                        "hil_reason": "Regulatory boundary needs validation.",
+                    }
+                ],
+                "recommended_hil_questions": [
+                    {"question": "Which regulatory controls are mandatory?", "priority": "high"}
+                ],
+            },
+            "hypothesis_pack": {"hypotheses": [{"id": "H1", "statement": "Improve traceability."}]},
+            "qa_pack": {"readiness": "requires_review", "missing_artifacts": ["to_be_pack"]},
+        },
+    )
+
+    assert response.status_code == 200
+    artifact = response.json()["artifact"]
+    assert artifact["executive_summary"]["risk_level"] == "high"
+    assert artifact["executive_summary"]["decision_posture"] == "requires_consultant_review"
+    assert len(artifact["risk_signals"]) >= 5
+    assert artifact["recommended_hil_questions"]
+    assert artifact["initiative_portfolio"][0]["governance_gate"] == "HIL"

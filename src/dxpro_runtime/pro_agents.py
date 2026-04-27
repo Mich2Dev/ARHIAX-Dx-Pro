@@ -757,14 +757,26 @@ class DiagnosticIntelligenceAgent(GovernedAgent):
         bayesian = payload.get("bayesian_pack") or {}
         scoring = payload.get("scoring_pack") or {}
         contrast = payload.get("contrast_pack") or {}
+        psychometrics = payload.get("psychometric_pack") or {}
+        irr = payload.get("irr_pack") or {}
+        hypothesis_pack = payload.get("hypothesis_pack") or {}
         qa = payload.get("qa_pack") or {}
         top = list(bayesian.get("prioritized_hypotheses") or [])[:3]
+        risk_signals = _diagnostic_risk_signals(scoring, psychometrics, irr, contrast, qa)
+        priorities = _diagnostic_priorities(scoring, bayesian, contrast)
+        hil_questions = _hil_questions(scoring, psychometrics, irr, contrast, qa)
+        executive_summary = _executive_summary(scoring, bayesian, qa, risk_signals)
         return {
             "artifact_type": "diagnostic_intelligence_pack",
-            "diagnostic_intelligence_version": "1.0",
+            "diagnostic_intelligence_version": "1.1",
             "overall_score": scoring.get("overall_score"),
             "maturity_level": scoring.get("maturity_level"),
+            "executive_summary": executive_summary,
             "top_diagnostic_hypotheses": top,
+            "priority_themes": priorities,
+            "risk_signals": risk_signals,
+            "recommended_hil_questions": hil_questions,
+            "initiative_portfolio": _initiative_portfolio(priorities, hypothesis_pack, contrast),
             "contrast_rows": len(contrast.get("contrast_matrix") or []),
             "qa_readiness": qa.get("readiness", "not_evaluated"),
             "recommended_next_step": _next_step(scoring, bayesian, contrast, qa),
@@ -936,6 +948,9 @@ class DiagnosticFusionCycleAgent(GovernedAgent):
             "stage_count": len(stages),
             "blocked_stages": blocked,
             "cycle_status": "completed" if not blocked else "completed_with_blocked_stages",
+            "executive_summary": (_artifact(intelligence) or {}).get("executive_summary"),
+            "recommended_next_step": (_artifact(intelligence) or {}).get("recommended_next_step"),
+            "risk_signal_count": len((_artifact(intelligence) or {}).get("risk_signals") or []),
             "stages": stages,
             "artifacts": {
                 "question_bank": _artifact(question_bank),
@@ -1142,6 +1157,226 @@ def _hypotheses_from_scoring(scoring_pack: dict[str, Any]) -> list[dict[str, Any
             }
         )
     return hypotheses
+
+
+def _diagnostic_risk_signals(
+    scoring: dict[str, Any],
+    psychometrics: dict[str, Any],
+    irr: dict[str, Any],
+    contrast: dict[str, Any],
+    qa: dict[str, Any],
+) -> list[dict[str, Any]]:
+    signals: list[dict[str, Any]] = []
+    score = scoring.get("overall_score")
+    if score is not None and score < 2.6:
+        signals.append(
+            {
+                "id": "risk-low-maturity",
+                "severity": "high",
+                "signal": "Overall maturity is below emerging level.",
+                "recommended_action": "Prioritize stabilization before advanced automation.",
+            }
+        )
+    for gap in scoring.get("largest_role_gaps") or []:
+        if float(gap.get("gap", 0)) >= 1.5:
+            signals.append(
+                {
+                    "id": f"risk-role-gap-{gap.get('dimension')}",
+                    "severity": "medium",
+                    "signal": f"High role perception gap in {gap.get('dimension')}.",
+                    "recommended_action": "Run HIL calibration with the highest and lowest scoring roles.",
+                }
+            )
+    alpha = psychometrics.get("cronbach_alpha")
+    if alpha is not None and alpha < 0.7:
+        signals.append(
+            {
+                "id": "risk-low-alpha",
+                "severity": "medium",
+                "signal": "Instrument internal consistency is below threshold.",
+                "recommended_action": "Review weak items before treating scores as final.",
+            }
+        )
+    agreement = irr.get("agreement_index")
+    if agreement is not None and agreement < 0.75:
+        signals.append(
+            {
+                "id": "risk-low-irr",
+                "severity": "medium",
+                "signal": "Inter-rater agreement is below promotion threshold.",
+                "recommended_action": "Recapture or reconcile divergent role assessments.",
+            }
+        )
+    for row in contrast.get("contrast_matrix") or []:
+        if row.get("requires_hil"):
+            signals.append(
+                {
+                    "id": f"risk-contrast-hil-{row.get('hypothesis_id')}",
+                    "severity": "high",
+                    "signal": f"Contrast requires human review for {row.get('hypothesis_id')}.",
+                    "recommended_action": row.get("hil_reason") or "Resolve contrast before TO-BE publication.",
+                }
+            )
+    if qa.get("readiness") == "requires_review":
+        signals.append(
+            {
+                "id": "risk-qa-review",
+                "severity": "high",
+                "signal": "Executive QA requires review.",
+                "recommended_action": "Close missing artifacts and risk flags before final publication.",
+            }
+        )
+    return signals
+
+
+def _diagnostic_priorities(
+    scoring: dict[str, Any],
+    bayesian: dict[str, Any],
+    contrast: dict[str, Any],
+) -> list[dict[str, Any]]:
+    priorities: list[dict[str, Any]] = []
+    for gap in scoring.get("largest_role_gaps") or []:
+        priorities.append(
+            {
+                "theme": str(gap.get("dimension", "alignment")),
+                "priority_score": round(60 + min(float(gap.get("gap", 0)) * 20, 30), 2),
+                "reason": "Large cross-role perception gap.",
+                "source": "multi_role_scoring",
+            }
+        )
+    for hyp in bayesian.get("prioritized_hypotheses") or []:
+        posterior = float(hyp.get("posterior", 0))
+        priorities.append(
+            {
+                "theme": hyp.get("statement", hyp.get("id", "diagnostic_hypothesis")),
+                "priority_score": round(posterior * 100, 2),
+                "reason": "High posterior diagnostic confidence.",
+                "source": "bayesian_synthesis",
+            }
+        )
+    for row in contrast.get("contrast_matrix") or []:
+        support = {"strong": 88, "moderate": 72, "weak": 55, "none": 35}.get(
+            row.get("support_level"), 50
+        )
+        priorities.append(
+            {
+                "theme": f"RGC {row.get('hypothesis_id')}",
+                "priority_score": support,
+                "reason": "Grey-literature contrast support level.",
+                "source": "deep_research_contrast",
+            }
+        )
+    priorities.sort(key=lambda item: item["priority_score"], reverse=True)
+    return priorities[:5]
+
+
+def _hil_questions(
+    scoring: dict[str, Any],
+    psychometrics: dict[str, Any],
+    irr: dict[str, Any],
+    contrast: dict[str, Any],
+    qa: dict[str, Any],
+) -> list[dict[str, Any]]:
+    questions = list(contrast.get("recommended_hil_questions") or [])
+    for gap in scoring.get("largest_role_gaps") or []:
+        if float(gap.get("gap", 0)) >= 1.5:
+            questions.append(
+                {
+                    "question": (
+                        f"Why do {gap.get('highest_role')} and {gap.get('lowest_role')} "
+                        f"perceive {gap.get('dimension')} so differently?"
+                    ),
+                    "priority": "high",
+                    "source": "multi_role_scoring",
+                }
+            )
+    if psychometrics.get("quality_status") == "review":
+        questions.append(
+            {
+                "question": "Which survey items should be rewritten or removed before final scoring?",
+                "priority": "medium",
+                "source": "psychometrics",
+            }
+        )
+    if irr.get("reliability_status") == "review":
+        questions.append(
+            {
+                "question": "Which roles or raters require calibration before using this evidence for decisions?",
+                "priority": "medium",
+                "source": "irr",
+            }
+        )
+    if qa.get("missing_artifacts"):
+        questions.append(
+            {
+                "question": f"What evidence is needed to close missing artifacts: {', '.join(qa.get('missing_artifacts'))}?",
+                "priority": "high",
+                "source": "executive_qa",
+            }
+        )
+    return questions[:8]
+
+
+def _initiative_portfolio(
+    priorities: list[dict[str, Any]],
+    hypothesis_pack: dict[str, Any],
+    contrast: dict[str, Any],
+) -> list[dict[str, Any]]:
+    hypotheses = hypothesis_pack.get("hypotheses") or []
+    contrast_by_hypothesis = {
+        row.get("hypothesis_id"): row for row in contrast.get("contrast_matrix") or []
+    }
+    portfolio = []
+    for index, priority in enumerate(priorities[:5], start=1):
+        related = hypotheses[index - 1] if index - 1 < len(hypotheses) else {}
+        contrast_row = contrast_by_hypothesis.get(related.get("id"), {})
+        support = contrast_row.get("support_level", "not_contrasted")
+        portfolio.append(
+            {
+                "id": f"initiative-{index:03d}",
+                "theme": priority.get("theme"),
+                "initiative_type": _initiative_type(priority),
+                "hypothesis_id": related.get("id"),
+                "evidence_support": support,
+                "priority_score": priority.get("priority_score"),
+                "governance_gate": "HIL" if contrast_row.get("requires_hil") else "PMEL",
+            }
+        )
+    return portfolio
+
+
+def _initiative_type(priority: dict[str, Any]) -> str:
+    theme = str(priority.get("theme", "")).lower()
+    if "technology" in theme or "traceability" in theme or "rgc" in theme:
+        return "digital_enablement"
+    if "process" in theme or "handoff" in theme:
+        return "process_redesign"
+    if "strategy" in theme or "alignment" in theme:
+        return "governance_alignment"
+    return "diagnostic_deepening"
+
+
+def _executive_summary(
+    scoring: dict[str, Any],
+    bayesian: dict[str, Any],
+    qa: dict[str, Any],
+    risk_signals: list[dict[str, Any]],
+) -> dict[str, Any]:
+    top = (bayesian.get("prioritized_hypotheses") or [{}])[0]
+    risk_level = "high" if any(r.get("severity") == "high" for r in risk_signals) else (
+        "medium" if risk_signals else "low"
+    )
+    thesis = "Evidence is insufficient for a final diagnostic thesis."
+    if top.get("statement"):
+        thesis = str(top["statement"])
+    return {
+        "diagnostic_thesis": thesis,
+        "maturity_level": scoring.get("maturity_level", "insufficient_data"),
+        "overall_score": scoring.get("overall_score"),
+        "risk_level": risk_level,
+        "qa_readiness": qa.get("readiness", "not_evaluated"),
+        "decision_posture": "ready_for_tobe" if qa.get("readiness") == "approved" and risk_level != "high" else "requires_consultant_review",
+    }
 
 
 def _next_step(

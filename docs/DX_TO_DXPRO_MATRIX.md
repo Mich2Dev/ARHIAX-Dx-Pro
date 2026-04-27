@@ -29,7 +29,7 @@ DX Pro now keeps its standalone runtime and absorbs selected DX diagnostic capab
 | `irr_calculator` | `IrrReliabilityAgent` | Inter-rater reliability pack with agreement index |
 | `g11a_bayesiano` | `BayesianSynthesisAgent` | Prioritized diagnostic hypotheses with Bayesian posterior updates |
 | `g14_qa_control` | `ExecutiveQaAgent` | Executive readiness gate and publication blocking flags |
-| `g12_hallazgos` style synthesis | `DiagnosticIntelligenceAgent` | Integrated intelligence pack over scoring, Bayesian, RGC, contrast and QA |
+| `g12_hallazgos` style synthesis | `DiagnosticIntelligenceAgent` | Integrated intelligence pack over scoring, Bayesian, RGC, contrast and QA, with executive thesis, priorities, HIL questions and initiatives |
 | Packaged 18-agent pipeline | `DiagnosticFusionCycleAgent` | End-to-end governed cycle that calls each fused Pro agent under one trace |
 
 ## Independence Rule

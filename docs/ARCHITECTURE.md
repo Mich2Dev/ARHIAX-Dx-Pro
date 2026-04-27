@@ -122,7 +122,7 @@ DX Pro remains the runtime core. The conceptual strengths of ARHIAX DX are now r
 | Inter-rater reliability | `IrrReliabilityAgent` | `irr_calculator` |
 | Bayesian synthesis | `BayesianSynthesisAgent` | `g11a_bayesiano` |
 | Executive QA | `ExecutiveQaAgent` | `g14_qa_control` |
-| Integrated intelligence | `DiagnosticIntelligenceAgent` | synthesis layer over scoring, IRR, Bayesian, RGC, contrast and QA |
+| Integrated intelligence | `DiagnosticIntelligenceAgent` | synthesis layer over scoring, IRR, Bayesian, RGC, contrast and QA; produces executive thesis, risk signals, HIL questions and initiative portfolio |
 | End-to-end orchestration | `DiagnosticFusionCycleAgent` | executes the governed fusion chain under one trace |
 
 The fusion rule is strict: migrated capabilities execute inside `dxpro_runtime`, pass through PMEL/ATK, write evidence, and do not import `arhiax_dx`.
@@ -144,6 +144,15 @@ The fusion rule is strict: migrated capabilities execute inside `dxpro_runtime`,
 11. diagnostic intelligence pack
 
 The parent cycle and every child stage execute PMEL pre-checks and write evidence under the same trace.
+
+The final `diagnostic_intelligence_pack` is the consultative decision layer. It converts diagnostic evidence into:
+
+- executive summary and diagnostic thesis
+- prioritized themes
+- risk signals
+- recommended HIL questions
+- initiative portfolio
+- recommended next step
 
 ## Evidence Model
 
