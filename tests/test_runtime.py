@@ -205,6 +205,8 @@ def _diagnostic_service(tmp_path: Path) -> DiagnosticService:
         ledger_path=tmp_path / "evidence.jsonl",
         evidence_secret="test-secret",
         policy_bundle_path=tmp_path / "missing-bundle",
+        case_store_root=tmp_path / "cases",
+        export_root=tmp_path / "exports",
     )
     runtime = DxProRuntime(
         policy_engine=PolicyEngine(config.policy_bundle_path),

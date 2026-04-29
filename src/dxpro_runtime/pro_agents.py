@@ -9,11 +9,14 @@ import statistics
 from typing import Any
 
 from pathlib import Path
+from uuid import uuid4
 
 from .bpmn import parse_model, run_lint
+from .case_store import CaseStore
 from .llm_client import MODEL_OPUS, MODEL_SONNET, LlmClient
 from .prompts import SYSTEM_BPMN_LINT, SYSTEM_TO_BE_GENERATOR, SYSTEM_VISUAL_INTERPRETER
 from .research import DeepResearchContraster, GreySourceClient, HypothesisBuilder, LensClient, OpenAlexClient
+from .report_exports import ReportExportService
 from .runtime import DxProRuntime
 
 
@@ -968,6 +971,315 @@ class DiagnosticFusionCycleAgent(GovernedAgent):
         }
 
 
+class ExecutiveReportAgent(GovernedAgent):
+    component = "executive_report"
+    subject = "dxpro-executive-report"
+    step = "executive_report_generation"
+    prompt_name = "pmel-executive-report-v1.0"
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        cycle_pack = payload.get("diagnostic_fusion_cycle_pack") or payload.get("cycle_pack") or {}
+        artifacts = cycle_pack.get("artifacts") or payload.get("artifacts") or {}
+        intelligence = (
+            artifacts.get("diagnostic_intelligence_pack")
+            or payload.get("diagnostic_intelligence_pack")
+            or {}
+        )
+        scoring = artifacts.get("scoring_pack") or payload.get("scoring_pack") or {}
+        bayesian = artifacts.get("bayesian_pack") or payload.get("bayesian_pack") or {}
+        contrast = artifacts.get("contrast_pack") or payload.get("contrast_pack") or {}
+        qa = artifacts.get("executive_qa_pack") or payload.get("executive_qa_pack") or {}
+        to_be = artifacts.get("to_be_pack") or payload.get("to_be_pack") or {}
+        bpmn_lint = artifacts.get("bpmn_lint_pack") or payload.get("bpmn_lint_pack") or {}
+
+        client = payload.get("client") or {}
+        report_sections = [
+            _report_section("executive_summary", "Executive Summary", _summary_body(intelligence)),
+            _report_section("diagnostic_maturity", "Diagnostic Maturity", _maturity_body(scoring)),
+            _report_section("priority_themes", "Priority Themes", _priority_body(intelligence)),
+            _report_section("evidence_contrast", "Evidence And Contrast", _contrast_body(contrast)),
+            _report_section("target_state", "Target Operating Model", _to_be_body(to_be, bpmn_lint)),
+            _report_section("risk_and_governance", "Risk And Governance", _risk_body(intelligence, qa)),
+            _report_section("roadmap", "Recommended Roadmap", _roadmap_body(intelligence)),
+        ]
+        return {
+            "artifact_type": "executive_report_pack",
+            "executive_report_version": "1.0",
+            "engagement_id": payload.get("engagement_id") or cycle_pack.get("engagement_id", "unknown"),
+            "client": {
+                "name": client.get("name") or client.get("legal_name") or "Client",
+                "domain": payload.get("domain") or cycle_pack.get("domain", ""),
+            },
+            "report_title": payload.get("report_title", "ARHIAX Dx Pro Executive Diagnostic Report"),
+            "report_status": _report_status(intelligence, qa),
+            "executive_thesis": (intelligence.get("executive_summary") or {}).get(
+                "diagnostic_thesis",
+                "Evidence is insufficient for a final diagnostic thesis.",
+            ),
+            "sections": report_sections,
+            "section_count": len(report_sections),
+            "exhibits": _report_exhibits(scoring, bayesian, intelligence),
+            "appendices": _report_appendices(cycle_pack, artifacts),
+            "publication_gate": qa.get("publication_gate", "consultant_review_required"),
+            "recommended_next_step": intelligence.get(
+                "recommended_next_step",
+                cycle_pack.get("recommended_next_step", "consultant_review"),
+            ),
+            "source_modules": ["g13_redactor", "g14_qa_control", "diagnostic_intelligence"],
+        }
+
+
+class ReportRendererAgent(GovernedAgent):
+    component = "report_renderer"
+    subject = "dxpro-report-renderer"
+    step = "executive_report_rendering"
+    prompt_name = "pmel-report-renderer-v1.0"
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        report_pack = payload.get("executive_report_pack") or payload.get("report_pack") or {}
+        if not report_pack:
+            return {
+                "artifact_type": "report_render_pack",
+                "report_render_version": "1.0",
+                "render_status": "blocked",
+                "error": "no_executive_report_pack_provided",
+                "markdown": "",
+                "export_manifest": [],
+            }
+
+        targets = _render_targets(payload.get("targets"))
+        markdown = _render_report_markdown(report_pack)
+        quality_checks = _render_quality_checks(report_pack, markdown)
+        export_manifest = [
+            {
+                "target": target,
+                "status": "ready_for_export",
+                "source": "markdown",
+                "text_encoding": "utf-8",
+                "unicode_safe": True,
+                "docx_engine": "python-docx" if target == "docx" else None,
+                "docx_character_support": "full_unicode" if target == "docx" else None,
+                "requires_human_publication_gate": True,
+            }
+            for target in targets
+        ]
+        return {
+            "artifact_type": "report_render_pack",
+            "report_render_version": "1.0",
+            "engagement_id": report_pack.get("engagement_id", payload.get("engagement_id", "unknown")),
+            "client": report_pack.get("client", {"name": "Client"}),
+            "render_status": "ready_for_consultant_review"
+            if all(check["passed"] for check in quality_checks)
+            else "review_required",
+            "source_report_status": report_pack.get("report_status", "consultant_review_required"),
+            "content_encoding": "utf-8",
+            "unicode_support": {
+                "source_markdown": "utf-8",
+                "docx": "OOXML Unicode via python-docx",
+                "spanish_safe": True,
+            },
+            "markdown": markdown,
+            "table_of_contents": _render_table_of_contents(report_pack),
+            "quality_checks": quality_checks,
+            "export_manifest": export_manifest,
+            "publication_gate": report_pack.get("publication_gate", "consultant_review_required"),
+            "source_modules": ["executive_report", "docx_generator"],
+        }
+
+
+class ReportExportAgent(GovernedAgent):
+    component = "report_exporter"
+    subject = "dxpro-report-exporter"
+    step = "executive_report_export"
+    prompt_name = "pmel-report-exporter-v1.0"
+
+    def __init__(
+        self,
+        runtime: DxProRuntime,
+        export_service: ReportExportService,
+        llm_client: LlmClient | None = None,
+    ) -> None:
+        super().__init__(runtime, llm_client)
+        self.export_service = export_service
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        report_pack = payload.get("executive_report_pack") or payload.get("report_pack") or {}
+        render_pack = payload.get("report_render_pack") or payload.get("render_pack") or {}
+        case_id = str(payload.get("case_id") or report_pack.get("case_id") or payload.get("engagement_id") or uuid4())
+        targets = _render_targets(payload.get("targets"))
+        files = self.export_service.export(case_id, report_pack, render_pack, targets)
+        return {
+            "artifact_type": "report_export_pack",
+            "report_export_version": "1.0",
+            "case_id": case_id,
+            "engagement_id": report_pack.get("engagement_id", payload.get("engagement_id", "unknown")),
+            "export_count": len(files),
+            "targets": targets,
+            "files": files,
+            "publication_gate": report_pack.get("publication_gate", "consultant_review_required"),
+        }
+
+
+class CaseApprovalAgent(GovernedAgent):
+    component = "case_approval"
+    subject = "dxpro-case-approval"
+    step = "case_approval_workflow"
+    prompt_name = "pmel-case-approval-v1.0"
+
+    def __init__(
+        self,
+        runtime: DxProRuntime,
+        case_store: CaseStore,
+        llm_client: LlmClient | None = None,
+    ) -> None:
+        super().__init__(runtime, llm_client)
+        self.case_store = case_store
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        case_id = str(payload.get("case_id", ""))
+        action = str(payload.get("action", "submit_for_review"))
+        reviewer = payload.get("reviewer") or {}
+        record = self.case_store.load(case_id)
+        if record is None:
+            return {
+                "artifact_type": "case_approval_pack",
+                "approval_version": "1.0",
+                "case_id": case_id,
+                "error": "case_not_found",
+            }
+
+        current = str(record.get("approval_status", "draft"))
+        next_status = _next_approval_status(current, action)
+        if next_status is None:
+            return {
+                "artifact_type": "case_approval_pack",
+                "approval_version": "1.0",
+                "case_id": case_id,
+                "error": "invalid_transition",
+                "current_status": current,
+                "requested_action": action,
+            }
+
+        record["approval_status"] = next_status
+        record["case_status"] = _case_status_from_approval(next_status, record.get("case_status", "draft"))
+        self.case_store.save(case_id, record)
+        self.case_store.append_history(
+            case_id,
+            {
+                "event": "approval_transition",
+                "action": action,
+                "from_status": current,
+                "to_status": next_status,
+                "reviewer": reviewer,
+            },
+        )
+        return {
+            "artifact_type": "case_approval_pack",
+            "approval_version": "1.0",
+            "case_id": case_id,
+            "previous_status": current,
+            "approval_status": next_status,
+            "case_status": record["case_status"],
+            "action": action,
+            "reviewer": reviewer,
+            "publication_allowed": next_status == "published",
+        }
+
+
+class RunDiagnosticCaseAgent(GovernedAgent):
+    component = "diagnostic_case_runner"
+    subject = "dxpro-diagnostic-case-runner"
+    step = "diagnostic_case_run"
+    prompt_name = "pmel-diagnostic-case-runner-v1.0"
+
+    def __init__(
+        self,
+        runtime: DxProRuntime,
+        case_store: CaseStore,
+        fusion_agent: GovernedAgent,
+        report_agent: GovernedAgent,
+        renderer_agent: GovernedAgent,
+        exporter_agent: GovernedAgent,
+        llm_client: LlmClient | None = None,
+    ) -> None:
+        super().__init__(runtime, llm_client)
+        self.case_store = case_store
+        self.fusion_agent = fusion_agent
+        self.report_agent = report_agent
+        self.renderer_agent = renderer_agent
+        self.exporter_agent = exporter_agent
+
+    def _build_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        case_id = str(payload.get("case_id") or f"case-{uuid4().hex[:12]}")
+        trace_id = str(payload.get("trace_id") or uuid4())
+        client = payload.get("client") or {}
+        case_record = {
+            "engagement_id": payload.get("engagement_id", "unknown"),
+            "client": client,
+            "domain": payload.get("domain", ""),
+            "case_status": "running",
+            "approval_status": "draft",
+            "trace_id": trace_id,
+            "history": [{"event": "case_started"}],
+        }
+        self.case_store.save(case_id, case_record)
+
+        shared = {**payload, "case_id": case_id, "trace_id": trace_id}
+        fusion = self.fusion_agent.execute(shared)
+        cycle_pack = _artifact(fusion) or {}
+        report = self.report_agent.execute({**shared, "diagnostic_fusion_cycle_pack": cycle_pack})
+        report_pack = _artifact(report) or {}
+        render = self.renderer_agent.execute({**shared, "executive_report_pack": report_pack, "targets": payload.get("targets")})
+        render_pack = _artifact(render) or {}
+        export = self.exporter_agent.execute(
+            {
+                **shared,
+                "executive_report_pack": report_pack,
+                "report_render_pack": render_pack,
+                "targets": payload.get("targets"),
+            }
+        )
+        export_pack = _artifact(export) or {}
+
+        outcome = _dominant_stage_outcome([fusion, report, render, export])
+        final_status = "review_pending" if outcome in {"PERMIT", "AUDIT", "MODIFY"} else "blocked"
+        record = {
+            **case_record,
+            "case_status": final_status,
+            "approval_status": "pending_review" if final_status == "review_pending" else "draft",
+            "artifacts": {
+                "diagnostic_fusion_cycle_pack": cycle_pack,
+                "executive_report_pack": report_pack,
+                "report_render_pack": render_pack,
+                "report_export_pack": export_pack,
+            },
+            "files": export_pack.get("files", []),
+            "history": [
+                {"event": "case_started"},
+                {"event": "fusion_completed", "outcome": fusion.get("outcome")},
+                {"event": "report_completed", "outcome": report.get("outcome")},
+                {"event": "render_completed", "outcome": render.get("outcome")},
+                {"event": "export_completed", "outcome": export.get("outcome")},
+            ],
+        }
+        self.case_store.save(case_id, record)
+        return {
+            "artifact_type": "diagnostic_case_pack",
+            "diagnostic_case_version": "1.0",
+            "case_id": case_id,
+            "trace_id": trace_id,
+            "case_status": record["case_status"],
+            "approval_status": record["approval_status"],
+            "stage_outcomes": {
+                "fusion": _stage_summary(fusion),
+                "report": _stage_summary(report),
+                "render": _stage_summary(render),
+                "export": _stage_summary(export),
+            },
+            "files": export_pack.get("files", []),
+        }
+
+
 def _as_list(value: Any) -> list[Any]:
     if value is None:
         return []
@@ -976,6 +1288,285 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, tuple):
         return list(value)
     return [value]
+
+
+def _report_section(section_id: str, title: str, body: str) -> dict[str, str]:
+    return {"id": section_id, "title": title, "body": body}
+
+
+def _render_targets(value: Any) -> list[str]:
+    allowed = {"markdown", "docx", "pdf"}
+    targets = [str(item).lower() for item in _as_list(value)] if value else ["markdown", "docx", "pdf"]
+    selected = [target for target in targets if target in allowed]
+    return selected or ["markdown"]
+
+
+def _render_report_markdown(report_pack: dict[str, Any]) -> str:
+    client = report_pack.get("client") or {}
+    lines = [
+        f"# {report_pack.get('report_title', 'ARHIAX Dx Pro Executive Diagnostic Report')}",
+        "",
+        f"**Cliente:** {client.get('name', 'Client')}",
+        f"**Engagement:** {report_pack.get('engagement_id', 'unknown')}",
+        f"**Estado:** {report_pack.get('report_status', 'consultant_review_required')}",
+        "",
+        "## Tesis Ejecutiva",
+        "",
+        str(report_pack.get("executive_thesis", "Evidence is insufficient for a final diagnostic thesis.")),
+        "",
+    ]
+    for section in report_pack.get("sections") or []:
+        lines.extend(
+            [
+                f"## {section.get('title', 'Section')}",
+                "",
+                str(section.get("body", "")),
+                "",
+            ]
+        )
+    exhibits = report_pack.get("exhibits") or []
+    if exhibits:
+        lines.extend(["## Exhibits", ""])
+        for exhibit in exhibits:
+            lines.extend(
+                [
+                    f"### {exhibit.get('title', exhibit.get('id', 'Exhibit'))}",
+                    "",
+                    "```json",
+                    json.dumps(exhibit.get("data", {}), ensure_ascii=False, indent=2),
+                    "```",
+                    "",
+                ]
+            )
+    appendices = report_pack.get("appendices") or []
+    if appendices:
+        lines.extend(["## Anexos", ""])
+        for appendix in appendices:
+            lines.extend(
+                [
+                    f"### {appendix.get('title', appendix.get('id', 'Appendix'))}",
+                    "",
+                    "```json",
+                    json.dumps(appendix.get("content", {}), ensure_ascii=False, indent=2),
+                    "```",
+                    "",
+                ]
+            )
+    lines.extend(
+        [
+            "## Control De Publicacion",
+            "",
+            f"Gate: {report_pack.get('publication_gate', 'consultant_review_required')}",
+        ]
+    )
+    return "\n".join(lines).strip() + "\n"
+
+
+def _render_table_of_contents(report_pack: dict[str, Any]) -> list[dict[str, str]]:
+    toc = [{"id": "executive_thesis", "title": "Tesis Ejecutiva"}]
+    for section in report_pack.get("sections") or []:
+        toc.append({"id": section.get("id", "section"), "title": section.get("title", "Section")})
+    if report_pack.get("exhibits"):
+        toc.append({"id": "exhibits", "title": "Exhibits"})
+    if report_pack.get("appendices"):
+        toc.append({"id": "appendices", "title": "Anexos"})
+    toc.append({"id": "publication_gate", "title": "Control De Publicacion"})
+    return toc
+
+
+def _render_quality_checks(report_pack: dict[str, Any], markdown: str) -> list[dict[str, Any]]:
+    sections = report_pack.get("sections") or []
+    exhibits = report_pack.get("exhibits") or []
+    appendices = report_pack.get("appendices") or []
+    return [
+        {
+            "id": "qc-title",
+            "label": "Report title present",
+            "passed": bool(report_pack.get("report_title")),
+        },
+        {
+            "id": "qc-sections",
+            "label": "Minimum consulting sections present",
+            "passed": len(sections) >= 5,
+            "observed": len(sections),
+        },
+        {
+            "id": "qc-exhibits",
+            "label": "Exhibits available",
+            "passed": len(exhibits) >= 1,
+            "observed": len(exhibits),
+        },
+        {
+            "id": "qc-appendices",
+            "label": "Governance appendices available",
+            "passed": len(appendices) >= 1,
+            "observed": len(appendices),
+        },
+        {
+            "id": "qc-publication-gate",
+            "label": "Human publication gate retained",
+            "passed": report_pack.get("publication_gate") is not None,
+        },
+        {
+            "id": "qc-markdown",
+            "label": "Markdown render contains substantive content",
+            "passed": len(markdown.strip()) >= 500,
+            "observed": len(markdown.strip()),
+        },
+        {
+            "id": "qc-unicode",
+            "label": "Unicode-safe Spanish rendering declared",
+            "passed": True,
+            "observed": "utf-8 + python-docx",
+        },
+    ]
+
+
+def _next_approval_status(current: str, action: str) -> str | None:
+    transitions = {
+        ("draft", "submit_for_review"): "pending_review",
+        ("pending_review", "approve"): "approved",
+        ("pending_review", "reject"): "changes_required",
+        ("changes_required", "resubmit"): "pending_review",
+        ("approved", "publish"): "published",
+    }
+    return transitions.get((current, action))
+
+
+def _case_status_from_approval(approval_status: str, current_case_status: str) -> str:
+    mapping = {
+        "pending_review": "review_pending",
+        "approved": "approved_for_publication",
+        "changes_required": "changes_required",
+        "published": "published",
+    }
+    return mapping.get(approval_status, current_case_status)
+
+
+def _summary_body(intelligence: dict[str, Any]) -> str:
+    summary = intelligence.get("executive_summary") or {}
+    thesis = summary.get("diagnostic_thesis", "No diagnostic thesis available.")
+    posture = summary.get("decision_posture", "not_evaluated")
+    risk = summary.get("risk_level", "not_evaluated")
+    return f"{thesis} Decision posture: {posture}. Risk level: {risk}."
+
+
+def _maturity_body(scoring: dict[str, Any]) -> str:
+    score = scoring.get("overall_score", "not available")
+    maturity = scoring.get("maturity_level", "not evaluated")
+    gaps = scoring.get("largest_role_gaps") or []
+    gap_text = "No material role gaps detected."
+    if gaps:
+        top = gaps[0]
+        gap_text = (
+            f"Largest role gap: {top.get('dimension')} between "
+            f"{top.get('highest_role')} and {top.get('lowest_role')}."
+        )
+    return f"Overall score: {score}. Maturity level: {maturity}. {gap_text}"
+
+
+def _priority_body(intelligence: dict[str, Any]) -> str:
+    priorities = intelligence.get("priority_themes") or []
+    if not priorities:
+        return "No priority themes were generated."
+    return " | ".join(
+        f"{item.get('theme')} ({item.get('priority_score')})" for item in priorities[:5]
+    )
+
+
+def _contrast_body(contrast: dict[str, Any]) -> str:
+    rows = contrast.get("contrast_matrix") or []
+    if not rows:
+        return "No contrast rows were available; treat evidence posture as preliminary."
+    support = {}
+    for row in rows:
+        level = row.get("support_level", "unknown")
+        support[level] = support.get(level, 0) + 1
+    return "Contrast matrix support levels: " + ", ".join(
+        f"{level}={count}" for level, count in sorted(support.items())
+    )
+
+
+def _to_be_body(to_be: dict[str, Any], bpmn_lint: dict[str, Any]) -> str:
+    changes = len(to_be.get("change_ledger") or to_be.get("to_be_steps") or [])
+    lint_outcome = bpmn_lint.get("outcome", "not_evaluated")
+    return f"Target-state artifact contains {changes} proposed changes or steps. BPMN lint outcome: {lint_outcome}."
+
+
+def _risk_body(intelligence: dict[str, Any], qa: dict[str, Any]) -> str:
+    risks = intelligence.get("risk_signals") or []
+    qa_readiness = qa.get("readiness", intelligence.get("qa_readiness", "not_evaluated"))
+    if not risks:
+        return f"No material risk signals were generated. QA readiness: {qa_readiness}."
+    high = len([risk for risk in risks if risk.get("severity") == "high"])
+    return f"{len(risks)} risk signals identified, including {high} high-severity signals. QA readiness: {qa_readiness}."
+
+
+def _roadmap_body(intelligence: dict[str, Any]) -> str:
+    portfolio = intelligence.get("initiative_portfolio") or []
+    if not portfolio:
+        return "Recommended roadmap requires consultant review after evidence completion."
+    horizons = ["0-30 days", "31-90 days", "91-180 days"]
+    items = []
+    for index, initiative in enumerate(portfolio[:3]):
+        items.append(f"{horizons[index]}: {initiative.get('theme')} ({initiative.get('initiative_type')})")
+    return " | ".join(items)
+
+
+def _report_status(intelligence: dict[str, Any], qa: dict[str, Any]) -> str:
+    summary = intelligence.get("executive_summary") or {}
+    if qa.get("readiness") == "approved" and summary.get("risk_level") != "high":
+        return "draft_ready"
+    return "consultant_review_required"
+
+
+def _report_exhibits(
+    scoring: dict[str, Any],
+    bayesian: dict[str, Any],
+    intelligence: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "exhibit-001",
+            "title": "Maturity Snapshot",
+            "type": "scorecard",
+            "data": {
+                "overall_score": scoring.get("overall_score"),
+                "maturity_level": scoring.get("maturity_level"),
+                "scores_by_dimension": scoring.get("scores_by_dimension", []),
+            },
+        },
+        {
+            "id": "exhibit-002",
+            "title": "Diagnostic Hypotheses",
+            "type": "ranked_table",
+            "data": bayesian.get("prioritized_hypotheses", []),
+        },
+        {
+            "id": "exhibit-003",
+            "title": "Initiative Portfolio",
+            "type": "portfolio_table",
+            "data": intelligence.get("initiative_portfolio", []),
+        },
+    ]
+
+
+def _report_appendices(cycle_pack: dict[str, Any], artifacts: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "appendix-a",
+            "title": "Governance Trace",
+            "content": {
+                "stage_count": cycle_pack.get("stage_count"),
+                "blocked_stages": cycle_pack.get("blocked_stages", []),
+            },
+        },
+        {
+            "id": "appendix-b",
+            "title": "Source Artifacts",
+            "content": sorted(artifacts.keys()),
+        },
+    ]
 
 
 def _artifact(result: dict[str, Any]) -> dict[str, Any] | None:
@@ -992,6 +1583,12 @@ def _stage_summary(result: dict[str, Any]) -> dict[str, Any]:
         "artifact_type": artifact.get("artifact_type") if artifact else None,
         "artifact_evidence_id": result.get("artifact_evidence_id"),
     }
+
+
+def _dominant_stage_outcome(results: list[dict[str, Any]]) -> str:
+    priority = {"PERMIT": 0, "AUDIT": 1, "MODIFY": 2, "ESCALATE": 3, "DENY": 4, "SUSPEND": 5}
+    outcomes = [str(result.get("outcome", "DENY")) for result in results]
+    return max(outcomes, key=lambda outcome: priority.get(outcome, 4))
 
 
 def _activities_from_responses(payload: dict[str, Any]) -> list[dict[str, str]]:

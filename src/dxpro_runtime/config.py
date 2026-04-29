@@ -19,6 +19,8 @@ class RuntimeConfig:
     ledger_path: Path
     evidence_secret: str
     policy_bundle_path: Path
+    case_store_root: Path
+    export_root: Path
     env: str = "development"
     anthropic_api_key: str | None = None
     opa_url: str | None = None
@@ -86,6 +88,8 @@ def load_config() -> RuntimeConfig:
         ledger_path=ledger_path,
         evidence_secret=secret,
         policy_bundle_path=bundle_path,
+        case_store_root=Path(os.getenv("DXPRO_CASE_STORE_ROOT", root / "data" / "cases")),
+        export_root=Path(os.getenv("DXPRO_EXPORT_ROOT", root / "data" / "exports")),
         env=env,
         anthropic_api_key=anthropic_api_key,
         opa_url=os.getenv("DXPRO_OPA_URL") or None,

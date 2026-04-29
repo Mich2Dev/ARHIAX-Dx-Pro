@@ -51,7 +51,7 @@ flowchart LR
 | `policy.py` | Policy evaluation through OPA or native fallback |
 | `runtime.py` | PMEL step orchestration and ATK aggregation |
 | `capture_agent.py` | First governed PMEL agent stub for process interview intake |
-| `pro_agents.py` | Governed DX Pro agents for TO-BE generation, BPMN lint, visual interpretation, DMN evaluation, crypto decommissioning, RGC research, adaptive questions, scoring, psychometrics, IRR, Bayesian synthesis, executive QA and diagnostic intelligence |
+| `pro_agents.py` | Governed DX Pro agents for TO-BE generation, BPMN lint, visual interpretation, DMN evaluation, crypto decommissioning, RGC research, adaptive questions, scoring, psychometrics, IRR, Bayesian synthesis, executive QA, executive reporting and report rendering |
 | `evidence.py` | Append-only HMAC ledger with interprocess file lock |
 | `provenance.py` | HMAC-SHA256 provenance certificates |
 | `api.py` | FastAPI application surface |
@@ -85,6 +85,13 @@ flowchart LR
 | `POST /v1/agents/qa/executive` | Governed executive QA and publication readiness |
 | `POST /v1/agents/diagnostic/intelligence-pack` | Governed integrated diagnostic intelligence pack |
 | `POST /v1/agents/diagnostic/run-fusion-cycle` | Governed end-to-end diagnostic fusion cycle orchestration |
+| `POST /v1/agents/report/executive` | Governed executive report pack generation |
+| `POST /v1/agents/report/render` | Governed report render pack generation with UTF-8 and Unicode-safe DOCX export metadata |
+| `POST /v1/agents/report/export` | Governed binary export generation for Markdown, DOCX and PDF |
+| `POST /v1/agents/cases/run` | Governed end-to-end case execution from fusion to exported deliverables |
+| `POST /v1/agents/cases/approval` | Governed approval and publication workflow for cases |
+| `GET /v1/cases` | List persisted diagnostic cases |
+| `GET /v1/cases/{case_id}` | Retrieve a persisted diagnostic case |
 | `GET /v1/evidence` | Recent evidence entries |
 | `GET /v1/evidence?trace_id={trace_id}` | Evidence by trace |
 | `GET /v1/pmel/runs/{trace_id}` | Trace run view |
@@ -124,6 +131,11 @@ DX Pro remains the runtime core. The conceptual strengths of ARHIAX DX are now r
 | Executive QA | `ExecutiveQaAgent` | `g14_qa_control` |
 | Integrated intelligence | `DiagnosticIntelligenceAgent` | synthesis layer over scoring, IRR, Bayesian, RGC, contrast and QA; produces executive thesis, risk signals, HIL questions and initiative portfolio |
 | End-to-end orchestration | `DiagnosticFusionCycleAgent` | executes the governed fusion chain under one trace |
+| Executive report | `ExecutiveReportAgent` | transforms the fusion cycle into a structured consulting report pack with sections, exhibits and appendices |
+| Report rendering | `ReportRendererAgent` | transforms the executive report pack into Markdown plus export manifests for Unicode-safe DOCX/PDF production |
+| Report export | `ReportExportAgent` | generates physical Markdown, DOCX and PDF deliverables on local governed storage |
+| Case orchestration | `RunDiagnosticCaseAgent` | runs the full diagnostic case, persists state and produces deliverables |
+| Approval workflow | `CaseApprovalAgent` | controls review, approval, resubmission and publication status for a case |
 
 The fusion rule is strict: migrated capabilities execute inside `dxpro_runtime`, pass through PMEL/ATK, write evidence, and do not import `arhiax_dx`.
 
@@ -153,6 +165,31 @@ The final `diagnostic_intelligence_pack` is the consultative decision layer. It 
 - recommended HIL questions
 - initiative portfolio
 - recommended next step
+
+`ExecutiveReportAgent` consumes the fusion cycle or equivalent artifacts and generates an `executive_report_pack` suitable for downstream rendering after consultant review.
+
+`ReportRendererAgent` consumes the `executive_report_pack` and produces a `report_render_pack` with:
+
+- UTF-8 Markdown source
+- table of contents
+- render quality checks
+- DOCX/PDF export manifest
+- explicit Unicode-safe metadata for Spanish text, including tildes and `ñ`
+
+`ReportExportAgent` consumes the report and render packs and creates physical files in governed local storage:
+
+- UTF-8 Markdown
+- DOCX through `python-docx`
+- PDF through Unicode-capable rendering
+
+`RunDiagnosticCaseAgent` closes the operational loop:
+
+1. diagnostic fusion cycle
+2. executive report
+3. report rendering
+4. binary export
+5. case persistence
+6. review-ready status
 
 ## Evidence Model
 

@@ -76,6 +76,11 @@ class DxProCatalog:
             ("executive_qa", "qa", "CRITICAL"),
             ("diagnostic_intelligence", "synthesis", "CRITICAL"),
             ("diagnostic_fusion_cycle", "orchestration", "CRITICAL"),
+            ("executive_report", "reporting", "CRITICAL"),
+            ("report_renderer", "rendering", "CRITICAL"),
+            ("report_exporter", "rendering", "CRITICAL"),
+            ("diagnostic_case_runner", "orchestration", "CRITICAL"),
+            ("case_approval", "qa", "CRITICAL"),
         ]
         tools: list[dict[str, Any]] = []
         for name, phase, severity in base_tools + pro_tools:
@@ -124,6 +129,11 @@ class DxProCatalog:
             "executiveQa",
             "diagnosticIntegrate",
             "diagnosticFusionCycle",
+            "executiveReportGenerate",
+            "reportRender",
+            "reportExport",
+            "diagnosticCaseRun",
+            "caseApproval",
         ]
         return [{"name": name, "enabled": True} for name in names]
 

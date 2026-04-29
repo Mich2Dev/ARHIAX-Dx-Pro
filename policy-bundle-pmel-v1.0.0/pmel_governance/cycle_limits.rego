@@ -27,7 +27,12 @@ limits := {
     "bayesian_synthesis": 2,
     "executive_qa": 1,
     "diagnostic_intelligence": 2,
-    "diagnostic_fusion_cycle": 1
+    "diagnostic_fusion_cycle": 1,
+    "executive_report": 1,
+    "report_renderer": 1,
+    "report_exporter": 1,
+    "diagnostic_case_runner": 1,
+    "case_approval": 2
 }
 
 current_component := input.execution.component

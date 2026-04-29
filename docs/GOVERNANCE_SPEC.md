@@ -76,12 +76,27 @@ DX Pro Pro agents must execute through PMEL pre-execution controls before genera
 - `ExecutiveQaAgent`
 - `DiagnosticIntelligenceAgent`
 - `DiagnosticFusionCycleAgent`
+- `ExecutiveReportAgent`
+- `ReportRendererAgent`
+- `ReportExportAgent`
+- `RunDiagnosticCaseAgent`
+- `CaseApprovalAgent`
 
 The artifact is blocked when PMEL returns `DENY`, `ESCALATE` or `SUSPEND`. Permitted executions record an `agent_artifact` evidence event after the individual policy decisions and aggregate evidence.
 
 The fused diagnostic agents keep DX Pro as the execution boundary. They add organizational diagnostic depth from ARHIAX DX while preserving PMEL/ATK controls, AIBOM declaration, cycle limits, consent gates and evidence logging.
 
 `DiagnosticFusionCycleAgent` is the governed orchestrator for the fusion layer. It does not bypass child controls: every child agent still runs its own PMEL pre-execution chain and writes its own artifact evidence under the parent trace.
+
+`ExecutiveReportAgent` is also governed. It generates a structured report pack, not an autonomously published final report; publication remains controlled by QA, PMEL and consultant review.
+
+`ReportRendererAgent` is governed as well. It does not publish files autonomously; it prepares Unicode-safe render artifacts, preserving Spanish orthography through UTF-8 source content and OOXML-compatible DOCX metadata.
+
+`ReportExportAgent` is governed and file-producing, but still not self-publishing. It writes deliverables to governed local storage and preserves the publication gate.
+
+`RunDiagnosticCaseAgent` is the governed end-to-end orchestrator for an operational case. It persists state, records artifacts and leaves the case in review status rather than bypassing QA.
+
+`CaseApprovalAgent` is the explicit HIL workflow boundary for review, approval, rejection, resubmission and publication.
 
 ## Autonomy
 
@@ -152,3 +167,4 @@ Planned hardening:
 - confirm CI run is green after GitHub publish
 - Ed25519 or KMS-backed signatures
 - downloadable audit pack artifact formats
+- binary DOCX/PDF emission from the render pack

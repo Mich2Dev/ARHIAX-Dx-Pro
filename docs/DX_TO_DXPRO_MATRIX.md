@@ -31,6 +31,11 @@ DX Pro now keeps its standalone runtime and absorbs selected DX diagnostic capab
 | `g14_qa_control` | `ExecutiveQaAgent` | Executive readiness gate and publication blocking flags |
 | `g12_hallazgos` style synthesis | `DiagnosticIntelligenceAgent` | Integrated intelligence pack over scoring, Bayesian, RGC, contrast and QA, with executive thesis, priorities, HIL questions and initiatives |
 | Packaged 18-agent pipeline | `DiagnosticFusionCycleAgent` | End-to-end governed cycle that calls each fused Pro agent under one trace |
+| `g13_redactor` | `ExecutiveReportAgent` | Structured executive report pack with sections, exhibits, appendices and publication gate |
+| `docx_generator` | `ReportRendererAgent` | Render pack with UTF-8 Markdown source and Unicode-safe DOCX/PDF export manifest |
+| Client delivery/export surface | `ReportExportAgent` | Physical Markdown, DOCX and PDF outputs on governed storage |
+| Diagnostic operating case | `RunDiagnosticCaseAgent` | Full operational case runner with persistence and delivery artifacts |
+| Human approval boundary | `CaseApprovalAgent` | Review, approval and publication transitions under governance |
 
 ## Independence Rule
 

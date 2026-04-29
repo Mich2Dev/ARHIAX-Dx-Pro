@@ -34,7 +34,12 @@ allowed_levels := {
     "bayesian_synthesis": "A2",
     "executive_qa": "A2",
     "diagnostic_intelligence": "A2",
-    "diagnostic_fusion_cycle": "A2"
+    "diagnostic_fusion_cycle": "A2",
+    "executive_report": "A2",
+    "report_renderer": "A2",
+    "report_exporter": "A2",
+    "diagnostic_case_runner": "A2",
+    "case_approval": "A2"
 }
 
 # PERMIT: agent operates at declared level matching allowed

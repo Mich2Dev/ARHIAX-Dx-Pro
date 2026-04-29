@@ -302,6 +302,11 @@ class PolicyEngine:
             "executive_qa": "A2",
             "diagnostic_intelligence": "A2",
             "diagnostic_fusion_cycle": "A2",
+            "executive_report": "A2",
+            "report_renderer": "A2",
+            "report_exporter": "A2",
+            "diagnostic_case_runner": "A2",
+            "case_approval": "A2",
             "diagnostic_agent": "A2",
         }
         if violations >= 3:
@@ -371,6 +376,11 @@ class PolicyEngine:
             "executive_qa": 1,
             "diagnostic_intelligence": 2,
             "diagnostic_fusion_cycle": 1,
+            "executive_report": 1,
+            "report_renderer": 1,
+            "report_exporter": 1,
+            "diagnostic_case_runner": 1,
+            "case_approval": 2,
             "diagnostic_agent": 5,
         }
         limit = limits.get(component, 1)

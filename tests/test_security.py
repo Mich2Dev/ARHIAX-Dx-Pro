@@ -31,6 +31,8 @@ def _build_client(
         ledger_path=tmp_path / "evidence.jsonl",
         evidence_secret=_STRONG_SECRET,
         policy_bundle_path=tmp_path / "missing-bundle",
+        case_store_root=tmp_path / "cases",
+        export_root=tmp_path / "exports",
         env=env,
         api_keys=api_keys,
         rate_limit_per_minute=rate_limit_per_minute,
@@ -189,6 +191,8 @@ def test_protected_endpoint_returns_503_when_prod_misconfigured(tmp_path: Path) 
         ledger_path=tmp_path / "evidence.jsonl",
         evidence_secret=_STRONG_SECRET,
         policy_bundle_path=tmp_path / "missing-bundle",
+        case_store_root=tmp_path / "cases",
+        export_root=tmp_path / "exports",
         env="production",
         api_keys=(),
     )

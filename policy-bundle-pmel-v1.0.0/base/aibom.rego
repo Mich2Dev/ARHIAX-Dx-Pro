@@ -46,7 +46,12 @@ allowed_prompts := {
     "pmel-bayesian-synthesis-v1.0",
     "pmel-executive-qa-v1.0",
     "pmel-diagnostic-intelligence-v1.0",
-    "pmel-diagnostic-fusion-cycle-v1.0"
+    "pmel-diagnostic-fusion-cycle-v1.0",
+    "pmel-executive-report-v1.0",
+    "pmel-report-renderer-v1.0",
+    "pmel-report-exporter-v1.0",
+    "pmel-diagnostic-case-runner-v1.0",
+    "pmel-case-approval-v1.0"
 }
 
 default decision := {"outcome": "DENY", "reason": "aibom_validation_failed"}

@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Security
 
 from .api_models import AgentExecuteRequest, CertificateVerifyRequest, DiagnosticEvaluateRequest, PmelCaptureRequest, PmelPolicyRequest, PmelStepRequest
 from .auth import ApiKeyAuth, api_key_header
+from .case_store import CaseStore
 from .capture_agent import PmelCaptureAgent
 from .catalog import DxProCatalog
 from .config import RuntimeConfig, load_config
@@ -18,10 +19,14 @@ from .policy import PolicyEngine
 from .pro_agents import (
     AdaptiveQuestionBankAgent,
     BayesianSynthesisAgent,
+    CaseApprovalAgent,
     CryptoParticipant,
     DiagnosticIntelligenceAgent,
+    ReportExportAgent,
+    RunDiagnosticCaseAgent,
     DiagnosticFusionCycleAgent,
     DmnEngine,
+    ExecutiveReportAgent,
     ExecutiveQaAgent,
     IrrReliabilityAgent,
     MultiRoleScoringAgent,
@@ -29,10 +34,12 @@ from .pro_agents import (
     PmelToBeGenerator,
     PmelVisualInterpreter,
     PsychometricsAgent,
+    ReportRendererAgent,
     RgcAgent,
     RgcDeepResearchContrasterAgent,
 )
 from .rate_limit import NullRateLimiter, RateLimiter
+from .report_exports import ReportExportService
 from .runtime import DxProRuntime
 
 
@@ -70,7 +77,13 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     runtime = build_runtime(config)
     llm_client = LlmClient(config.anthropic_api_key) if config.anthropic_api_key else None
     capture_agent = PmelCaptureAgent(runtime)
+    case_store = CaseStore(config.case_store_root)
+    export_service = ReportExportService(config.export_root)
     verb_lexicon_path = config.policy_bundle_path / "data" / "lexicon_verbs_es.json"
+    fusion_agent = DiagnosticFusionCycleAgent(runtime, llm_client)
+    report_agent = ExecutiveReportAgent(runtime, llm_client)
+    renderer_agent = ReportRendererAgent(runtime, llm_client)
+    export_agent = ReportExportAgent(runtime, export_service, llm_client)
     pro_agents = {
         "to_be_generator": PmelToBeGenerator(runtime, llm_client),
         "bpmn_lint_agent": PmelBpmnLintAgent(runtime, llm_client, verb_lexicon_path),
@@ -86,7 +99,20 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
         "bayesian_synthesis": BayesianSynthesisAgent(runtime, llm_client),
         "executive_qa": ExecutiveQaAgent(runtime, llm_client),
         "diagnostic_intelligence": DiagnosticIntelligenceAgent(runtime, llm_client),
-        "diagnostic_fusion_cycle": DiagnosticFusionCycleAgent(runtime, llm_client),
+        "diagnostic_fusion_cycle": fusion_agent,
+        "executive_report": report_agent,
+        "report_renderer": renderer_agent,
+        "report_exporter": export_agent,
+        "case_approval": CaseApprovalAgent(runtime, case_store, llm_client),
+        "diagnostic_case_runner": RunDiagnosticCaseAgent(
+            runtime,
+            case_store,
+            fusion_agent,
+            report_agent,
+            renderer_agent,
+            export_agent,
+            llm_client,
+        ),
     }
     diagnostics = DiagnosticService(config, catalog, runtime)
 
@@ -104,6 +130,8 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     app.state.capture_agent = capture_agent
     app.state.pro_agents = pro_agents
     app.state.diagnostics = diagnostics
+    app.state.case_store = case_store
+    app.state.export_service = export_service
 
     # ----- Public endpoints (no auth, for load balancers and discovery) -----
     @app.get("/")
@@ -146,6 +174,13 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
                 "POST /v1/agents/qa/executive",
                 "POST /v1/agents/diagnostic/intelligence-pack",
                 "POST /v1/agents/diagnostic/run-fusion-cycle",
+                "POST /v1/agents/report/executive",
+                "POST /v1/agents/report/render",
+                "POST /v1/agents/report/export",
+                "POST /v1/agents/cases/run",
+                "POST /v1/agents/cases/approval",
+                "GET /v1/cases",
+                "GET /v1/cases/{case_id}",
             ],
         }
 
@@ -185,6 +220,17 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
         if trace_id:
             return {"entries": runtime.ledger.find_by_trace(trace_id)}
         return {"entries": runtime.ledger.list(limit=limit)}
+
+    @app.get("/v1/cases", dependencies=protected)
+    def list_cases(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
+        return {"cases": case_store.list(limit=limit)}
+
+    @app.get("/v1/cases/{case_id}", dependencies=protected)
+    def get_case(case_id: str) -> dict[str, Any]:
+        case = case_store.load(case_id)
+        if case is None:
+            raise HTTPException(status_code=404, detail={"error": "case_not_found", "case_id": case_id})
+        return case
 
     @app.get("/v1/pmel/runs/{trace_id}", dependencies=protected)
     def pmel_run(trace_id: str) -> dict[str, Any]:
@@ -301,6 +347,31 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     @app.post("/v1/dxpro/agents/diagnostic/run-fusion-cycle", dependencies=protected)
     def run_diagnostic_fusion_cycle(request: AgentExecuteRequest) -> dict[str, Any]:
         return pro_agents["diagnostic_fusion_cycle"].execute(request.to_payload())
+
+    @app.post("/v1/agents/report/executive", dependencies=protected)
+    @app.post("/v1/dxpro/agents/report/executive", dependencies=protected)
+    def generate_executive_report(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["executive_report"].execute(request.to_payload())
+
+    @app.post("/v1/agents/report/render", dependencies=protected)
+    @app.post("/v1/dxpro/agents/report/render", dependencies=protected)
+    def render_executive_report(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["report_renderer"].execute(request.to_payload())
+
+    @app.post("/v1/agents/report/export", dependencies=protected)
+    @app.post("/v1/dxpro/agents/report/export", dependencies=protected)
+    def export_executive_report(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["report_exporter"].execute(request.to_payload())
+
+    @app.post("/v1/agents/cases/run", dependencies=protected)
+    @app.post("/v1/dxpro/agents/cases/run", dependencies=protected)
+    def run_diagnostic_case(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["diagnostic_case_runner"].execute(request.to_payload())
+
+    @app.post("/v1/agents/cases/approval", dependencies=protected)
+    @app.post("/v1/dxpro/agents/cases/approval", dependencies=protected)
+    def run_case_approval(request: AgentExecuteRequest) -> dict[str, Any]:
+        return pro_agents["case_approval"].execute(request.to_payload())
 
     return app
 
