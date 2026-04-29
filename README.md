@@ -1,60 +1,48 @@
-# ARHIAX DX Pro Runtime
+# ARHIAX DX Pro
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-runtime-009688)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/frontend-React%20%2B%20Vite-222222)](frontend/arhiax-dxpro-site)
 [![OPA First](https://img.shields.io/badge/policy-OPA%20first-7B3FE4)](https://www.openpolicyagent.org/)
-[![PMEL/ATK](https://img.shields.io/badge/governance-PMEL%2FATK-111827)](#governance-model)
+[![PMEL/ATK](https://img.shields.io/badge/governance-PMEL%2FATK-111827)](#governance)
 
-Standalone governed diagnostic runtime for **ARHIAX DX Pro**.
+Standalone governed diagnostic product for **ARHIAX DX Pro**, owned by Sinergia Consulting Group.
 
-DX Pro does not import or depend on the base `arhiax_dx` package. It ships its
-own catalog, PMEL/ATK policy layer, evidence ledger, diagnostic orchestration,
-Pro agents, OPA bundle and provenance certificates.
+DX Pro is not a fork-time dependency of `arhiax_dx`. It ships its own runtime, PMEL/ATK governance, OPA policy bundle, evidence ledger, diagnostic agents, case persistence, approval workflow, report exports and frontend console.
 
----
+## Current State
 
-## What This Runtime Does
+Current state: **preproduction functional product**.
 
-ARHIAX DX Pro turns a diagnostic request into a governed, auditable execution:
+- Backend runtime is implemented with FastAPI under `src/dxpro_runtime`.
+- Frontend operating console is implemented under `frontend/arhiax-dxpro-site`.
+- CI is green on `main`.
+- Local validation currently covers `92` backend tests.
+- The system can run a governed diagnostic case end to end and produce Markdown, DOCX and PDF deliverables.
+
+## What DX Pro Does
 
 ```mermaid
 flowchart LR
-    A["Diagnostic request"] --> B["Preflight governance"]
-    B --> C["PMEL/ATK policy step"]
-    C --> D["Execution plan"]
-    D --> E["Evidence ledger"]
-    E --> F["HMAC certificate"]
-    F --> G["Audit pack"]
-
-    C --> H["Pro agents"]
-    H --> I["Governed artifacts"]
-    I --> E
+    A["Diagnostic case"] --> B["PMEL/ATK governance"]
+    B --> C["Fusion cycle"]
+    C --> D["Executive report"]
+    D --> E["Renderer"]
+    E --> F["DOCX / PDF / Markdown export"]
+    F --> G["Case store"]
+    G --> H["Human approval workflow"]
 ```
 
-Core outcomes:
+Core capabilities:
 
 | Layer | Responsibility |
 | --- | --- |
-| Diagnostic service | Validates client identity, mandate, boundary, tools, operations, data scopes, QA, IRR, retention and publication gates. |
-| PMEL/ATK runtime | Evaluates policy packages and aggregates outcomes by severity. |
-| Evidence ledger | Stores append-only HMAC-chained evidence entries. |
-| Provenance | Issues and verifies HMAC-SHA256 diagnostic certificates. |
-| OPA bundle | Provides the primary policy path for PMEL governance. |
-| Pro agents | Generate governed artifacts only after policy approval. |
-
----
-
-## Status
-
-Current state: **standalone vertical runtime**.
-
-- OPA is the primary policy path.
-- Native fallback exists for development/degraded mode.
-- The native fallback covers all packages declared in `policy-bundle-pmel-v1.0.0/manifest.json`.
-- API-key authentication and rate limiting are enforced when keys or production mode are configured.
-- PMEL consent is fail-closed: omitted consent is treated as missing consent, not as approval.
-
----
+| Runtime governance | PMEL/ATK policy execution, autonomy caps, consent gates, AIBOM validation and cycle limits. |
+| Evidence | Append-only HMAC ledger, trace evidence, certificate verification and audit packs. |
+| Diagnostic fusion | Adaptive questions, multi-role scoring, psychometrics, IRR, Bayesian synthesis, RGC, deep research contrast, TO-BE, BPMN lint and executive QA. |
+| Reporting | Executive report pack, UTF-8 render pack and physical Markdown/DOCX/PDF exports. |
+| Case operations | Persisted diagnostic cases, full case runner and human approval/publication workflow. |
+| Frontend | Operator console for running cases, viewing status, approving and locating deliverables. |
 
 ## Repository Map
 
@@ -66,44 +54,37 @@ Current state: **standalone vertical runtime**.
 |   |-- GOVERNANCE_SPEC.md
 |   |-- DX_TO_DXPRO_MATRIX.md
 |   `-- BITACORA_ARHIAX_DX_PRO.md
+|-- frontend/
+|   `-- arhiax-dxpro-site/
 |-- fixtures/
 |-- policy-bundle-pmel-v1.0.0/
-|   |-- base/
-|   |-- pmel_governance/
-|   |-- bpmn_lint/
-|   |-- decommissioning/
-|   |-- data/
-|   |-- tests/
-|   `-- manifest.json
 |-- scripts/
 |-- src/dxpro_runtime/
 `-- tests/
 ```
 
----
-
 ## Quickstart
 
-### 1. Install
+Install backend dependencies:
 
 ```powershell
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-### 2. Run tests
+Run backend tests:
 
 ```powershell
 python -m pytest -q
 ```
 
-### 3. Run the API
+Run the API:
 
 ```powershell
 python -m dxpro_runtime.server
 ```
 
-Default service:
+Default API service:
 
 ```text
 http://127.0.0.1:8310
@@ -115,13 +96,25 @@ OpenAPI docs:
 http://127.0.0.1:8310/docs
 ```
 
-### 4. Smoke test
+Run the frontend console:
 
 ```powershell
-python scripts/smoke_test.py
+cd frontend/arhiax-dxpro-site
+npm install
+npm run dev
 ```
 
----
+The frontend uses this API base by default:
+
+```text
+http://127.0.0.1:8000
+```
+
+Override it with:
+
+```powershell
+$env:VITE_DXPRO_API_URL = "http://127.0.0.1:8310"
+```
 
 ## Configuration
 
@@ -130,6 +123,8 @@ python scripts/smoke_test.py
 | `DXPRO_ENV` | No | `development` by default. Use `production` for hardened startup checks. |
 | `DXPRO_RUNTIME_ROOT` | No | Runtime root. Defaults to current working directory. |
 | `DXPRO_LEDGER_PATH` | No | Evidence ledger path. Defaults to `data/evidence.jsonl`. |
+| `DXPRO_CASE_STORE_ROOT` | No | Local persisted case store. Defaults to `data/cases`. |
+| `DXPRO_EXPORT_ROOT` | No | Local report export folder. Defaults to `data/exports`. |
 | `DXPRO_EVIDENCE_SECRET` | Production | Secret used for evidence HMAC and certificates. Must be strong in production. |
 | `DXPRO_POLICY_BUNDLE_PATH` | No | PMEL policy bundle path. Defaults to `policy-bundle-pmel-v1.0.0`. |
 | `DXPRO_OPA_URL` | No | OPA HTTP server URL. Enables `opa-http` mode. |
@@ -140,27 +135,42 @@ python scripts/smoke_test.py
 | `LENS_API_TOKEN` | No | Enables Lens.org patent search for RGC. |
 | `OPENALEX_CONTACT_EMAIL` | No | Polite-pool contact for OpenAlex paper search. |
 
-Development example:
+## Main API Surface
 
-```powershell
-$env:DXPRO_ENV = "development"
-$env:DXPRO_EVIDENCE_SECRET = "local-dev-secret-change-this-32chars"
-python -m dxpro_runtime.server
-```
+Public:
 
-Production minimum:
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/` | Service discovery. |
+| `GET` | `/healthz` | Liveness probe. |
+| `GET` | `/readyz` | Readiness and runtime mode. |
 
-```powershell
-$env:DXPRO_ENV = "production"
-$env:DXPRO_EVIDENCE_SECRET = "<strong-32-plus-character-secret>"
-$env:DXPRO_API_KEYS = "<strong-api-key-1>,<strong-api-key-2>"
-$env:ANTHROPIC_API_KEY = "<anthropic-key>"
-python -m dxpro_runtime.server
-```
+Governance and evidence:
 
----
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/compliance/posture` | Runtime posture, catalog, policy coverage and ledger head. |
+| `POST` | `/v1/pmel/evaluate` | Evaluate one PMEL policy package. |
+| `POST` | `/v1/pmel/run-step` | Evaluate and aggregate a PMEL policy chain. |
+| `GET` | `/v1/evidence` | Recent evidence entries. |
+| `GET` | `/v1/evidence/verify` | Verify the full HMAC chain. |
+| `GET` | `/v1/audit-pack/{trace_id}` | Complete audit pack for a trace. |
 
-## Governance Model
+Diagnostic and case operations:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/v1/diagnostics/evaluate` | Full governed diagnostic evaluation. |
+| `POST` | `/v1/agents/diagnostic/run-fusion-cycle` | Run the governed fusion chain. |
+| `POST` | `/v1/agents/report/executive` | Generate an executive report pack. |
+| `POST` | `/v1/agents/report/render` | Generate a UTF-8 render pack. |
+| `POST` | `/v1/agents/report/export` | Export Markdown, DOCX and PDF files. |
+| `POST` | `/v1/agents/cases/run` | Run a case end to end and persist it. |
+| `POST` | `/v1/agents/cases/approval` | Approve, reject, resubmit or publish a case. |
+| `GET` | `/v1/cases` | List persisted cases. |
+| `GET` | `/v1/cases/{case_id}` | Retrieve one persisted case. |
+
+## Governance
 
 DX Pro aggregates PMEL policy outcomes using ATK priority:
 
@@ -173,247 +183,14 @@ DX Pro aggregates PMEL policy outcomes using ATK priority:
 | 5 | `AUDIT` | Permit but log/audit the condition. |
 | 6 | `PERMIT` | Allow execution. |
 
-Default `run-step` packages:
+Default Pro agent pre-execution packages:
 
 - `arhia.pmel.base.autonomy`
 - `arhia.pmel.governance.consent_gates`
 - `arhia.pmel.base.aibom`
 - `arhia.pmel.governance.cycle_limits`
 
-Full bundle mode evaluates every package declared by the manifest:
-
-```json
-{
-  "subject": "pmel-full-bundle",
-  "scope": "full_bundle",
-  "input": {}
-}
-```
-
----
-
-## Policy Engine
-
-Policy mode selection:
-
-```mermaid
-flowchart TD
-    A["Policy request"] --> B{"DXPRO_OPA_URL set?"}
-    B -- Yes --> C["opa-http"]
-    B -- No --> D{"opa binary available?"}
-    D -- Yes --> E["opa-cli"]
-    D -- No --> F["native-fallback"]
-```
-
-Validate the policy bundle:
-
-```powershell
-python scripts/validate_opa.py
-```
-
-The validator uses a local `opa` binary when available. If not, it tries Docker
-with `openpolicyagent/opa:0.68.0-rootless`.
-
----
-
-## API Surface
-
-Public endpoints:
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/` | Service discovery. |
-| `GET` | `/healthz` | Liveness probe. |
-| `GET` | `/readyz` | Readiness and runtime mode. |
-
-Protected endpoints:
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/v1/compliance/posture` | Runtime posture, catalog, policy coverage and ledger head. |
-| `GET` | `/v1/compliance/install-readiness` | Install checks and required bindings. |
-| `GET` | `/v1/compliance/install-blueprint` | Deployment binding blueprint. |
-| `POST` | `/v1/diagnostics/evaluate` | Full governed DX Pro diagnostic evaluation. |
-| `POST` | `/v1/pmel/evaluate` | Evaluate one PMEL policy package. |
-| `POST` | `/v1/pmel/run-step` | Evaluate and aggregate a PMEL policy chain. |
-| `POST` | `/v1/pmel/capture` | Governed PMEL capture draft. |
-| `GET` | `/v1/evidence` | Recent evidence entries. |
-| `GET` | `/v1/evidence?trace_id={trace_id}` | Evidence entries for one trace. |
-| `GET` | `/v1/pmel/runs/{trace_id}` | PMEL run evidence for one trace. |
-| `GET` | `/v1/evidence/verify` | Verify the full HMAC chain. |
-| `POST` | `/v1/certificates/verify` | Verify diagnostic certificate trust. |
-| `GET` | `/v1/audit-pack/{trace_id}` | Complete audit pack for a trace. |
-
-DX Pro aliases are also available:
-
-- `/v1/dxpro/pmel/evaluate`
-- `/v1/dxpro/pmel/run-step`
-- `/v1/dxpro/pmel/capture`
-
----
-
-## Diagnostic Evaluate
-
-`POST /v1/diagnostics/evaluate` performs the full governed diagnostic path:
-
-1. Validate client identity and authorization boundary.
-2. Validate mandate, tools, operations and data scopes.
-3. Check autonomy, anonymization, prompt-injection signals and operating window.
-4. Check QA, publication, delta sigma, IRR and retention gates.
-5. Run PMEL pre-execution governance.
-6. Build an execution plan.
-7. Append diagnostic evidence.
-8. Issue a provenance certificate when enabled.
-
-Minimal successful payload:
-
-```json
-{
-  "requested_autonomy_level": "A1",
-  "mandate": {
-    "organization_name": "Cliente Demo",
-    "domain": "diagnostico organizacional",
-    "subprocess": "evaluacion",
-    "size_org": "120",
-    "objective": "Diagnosticar cuellos de botella"
-  },
-  "client": {
-    "client_id": "client-001",
-    "legal_name": "Cliente Demo S.A.S.",
-    "authorized_boundary_id": "boundary-diagnostico-org-pro"
-  },
-  "processing_profile": {
-    "issue_certificate": true,
-    "retention_days": 30
-  },
-  "simulation": {
-    "current_weekday": 2,
-    "current_hour": 10,
-    "qa_score": 95,
-    "irr_alpha": 0.8
-  },
-  "pmel": {
-    "consents": {
-      "T1": true,
-      "T3": true
-    }
-  }
-}
-```
-
-Important: `pmel.consents` is required for PMEL approval. If consent is omitted,
-the PMEL aggregate returns `DENY`.
-
-Response includes:
-
-- `decision`
-- `execution_plan`
-- `pmel_step`
-- `certificate`
-- `rule_results`
-- `trace_id`
-- `evidence_id`
-- `certificate_evidence_id`
-
----
-
-## Evidence And Audit
-
-The ledger is append-only and HMAC-chained.
-
-When certificate issuance is enabled, a successful diagnostic evaluation writes
-seven evidence entries:
-
-| Sequence | Event |
-| ---: | --- |
-| 1-4 | PMEL `policy_decision` entries. |
-| 5 | PMEL `pmel_step_aggregate`. |
-| 6 | `diagnostic_evaluation`. |
-| 7 | `provenance_certificate`. |
-
-Verify ledger:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8310/v1/evidence/verify
-```
-
-Verify certificate:
-
-```json
-{
-  "certificate": {}
-}
-```
-
-Get audit pack:
-
-```text
-GET /v1/audit-pack/{trace_id}
-```
-
-The audit pack contains:
-
-- ledger verification result
-- diagnostic evidence IDs
-- PMEL evidence IDs
-- certificate evidence IDs
-- certificate verification results
-- ordered evidence entries for the trace
-
----
-
-## Pro Agents
-
-Every Pro agent runs PMEL governance before producing an artifact.
-
-| Agent | Endpoint | Artifact |
-| --- | --- | --- |
-| `PmelToBeGenerator` | `/v1/agents/to-be/generate` | `pmel_to_be_blueprint` |
-| `PmelBpmnLintAgent` | `/v1/agents/bpmn-lint` | `pmel_bpmn_lint_report` |
-| `PmelVisualInterpreter` | `/v1/agents/visual-interpret` | `pmel_visual_interpretation` |
-| `DmnEngine` | `/v1/agents/dmn/evaluate` | `dmn_decision_result` |
-| `CryptoParticipant` | `/v1/agents/crypto/decommission` | `crypto_decommissioning_plan` |
-| `RgcAgent` | `/v1/agents/research/build-hypothesis-pack` | `pmel_hypothesis_pack` |
-
-Consent is explicit:
-
-```json
-{
-  "consent": {
-    "action": "ingest_to_llm",
-    "consents": {
-      "T1": true,
-      "T3": true
-    }
-  }
-}
-```
-
-If governance returns `DENY`, `ESCALATE` or `SUSPEND`, the response keeps
-`artifact` as `null`.
-
----
-
-## Fixtures
-
-Reusable local fixtures:
-
-| Fixture | Purpose |
-| --- | --- |
-| `fixtures/run_step_permit.json` | Happy-path PMEL step. |
-| `fixtures/run_step_missing_consent.json` | Consent-denied PMEL step. |
-| `fixtures/run_step_autonomy_a3.json` | Autonomy above DX Pro maximum. |
-| `fixtures/run_step_cycle_suspend.json` | Cycle-limit suspension. |
-| `fixtures/capture_permit.json` | Governed PMEL capture. |
-| `fixtures/diagnostic_permit.json` | Governed diagnostic evaluation. |
-
-Run a fixture:
-
-```powershell
-python scripts/run_fixture.py fixtures/run_step_permit.json
-```
-
----
+Consent is fail-closed. If required consent is omitted, governed agents return no artifact.
 
 ## Quality Gates
 
@@ -423,6 +200,9 @@ Local validation:
 python -m pytest -q
 python scripts/smoke_test.py
 python scripts/validate_opa.py
+
+cd frontend/arhiax-dxpro-site
+npm run build
 ```
 
 CI validation in `.github/workflows/ci.yml`:
@@ -433,48 +213,31 @@ CI validation in `.github/workflows/ci.yml`:
 4. Install OPA.
 5. Validate the OPA bundle.
 
----
+## Production Readiness Notes
 
-## Security Notes
+Already implemented:
 
-- Production refuses the default development evidence secret.
-- Production requires API keys.
-- Production requires `ANTHROPIC_API_KEY`.
-- API keys are checked with constant-time comparison.
-- Rate limiting is per API-key fingerprint.
-- Evidence HMACs do not expose the API key or raw secret.
-- PMEL consent gates fail closed when consent is missing.
-- Decommissioning agent is `plan_only`; it does not destroy data.
+- Runtime governance and evidence.
+- API-key auth and rate limiting.
+- OPA-first policy mode.
+- Native fallback for declared packages.
+- Case persistence and local export storage.
+- Human approval workflow.
+- Frontend console.
 
----
+Still required for production deployment:
 
-## Useful Commands
-
-```powershell
-# Show repo state
-git status
-
-# Run the server
-python -m dxpro_runtime.server
-
-# Run all tests
-python -m pytest -q
-
-# Run one test file
-python -m pytest tests/test_api.py -q
-
-# Validate OPA bundle
-python scripts/validate_opa.py
-
-# Smoke test
-python scripts/smoke_test.py
-```
-
----
+- Strong production secrets.
+- Real deployment target and process manager/container.
+- Frontend auth against protected API endpoints.
+- Download endpoints or object storage for exported deliverables.
+- Observability, logs and backup policy.
+- Final QA of responsive frontend flows.
 
 ## Related Docs
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/GOVERNANCE_SPEC.md`](docs/GOVERNANCE_SPEC.md)
 - [`docs/DX_TO_DXPRO_MATRIX.md`](docs/DX_TO_DXPRO_MATRIX.md)
+- [`frontend/arhiax-dxpro-site/README.md`](frontend/arhiax-dxpro-site/README.md)
 - [`policy-bundle-pmel-v1.0.0/README.md`](policy-bundle-pmel-v1.0.0/README.md)
