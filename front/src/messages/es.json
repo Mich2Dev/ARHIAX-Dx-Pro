@@ -1,0 +1,116 @@
+{
+  "nav": {
+    "dashboard": "Panel",
+    "new": "Nuevo Diagnóstico",
+    "clients": "Clientes",
+    "reviews": "Alertas",
+    "ledger": "Evidencia",
+    "compliance": "Cumplimiento"
+  },
+  "dashboard": {
+    "title": "Panel de Diagnósticos",
+    "subtitle": "Diagnósticos organizacionales gobernados",
+    "new_diagnostic": "Nuevo Diagnóstico",
+    "active": "Activos",
+    "pending_review": "En Revisión",
+    "completed": "Completados",
+    "denied": "Denegados",
+    "recent": "Diagnósticos Recientes",
+    "no_diagnostics": "No hay diagnósticos aún"
+  },
+  "diagnostic": {
+    "status": {
+      "pending": "Pendiente",
+      "running": "Ejecutando",
+      "awaiting_review": "En Revisión",
+      "completed": "Completado",
+      "denied": "Denegado",
+      "failed": "Fallido"
+    },
+    "decision": {
+      "ALLOW": "Aprobado",
+      "DENY": "Denegado",
+      "ESCALATE_TO_HUMAN": "Escalado",
+      "ALLOW_WITH_HIC_NOTIFICATION": "Aprobado con Notificación"
+    }
+  },
+  "form": {
+    "step1": "Datos del Cliente",
+    "step2": "Configuración del Pipeline",
+    "step3": "Revisión y Envío",
+    "org_name": "Nombre de la Organización",
+    "legal_name": "Nombre Legal",
+    "client_id": "ID del Cliente",
+    "domain": "Dominio",
+    "subprocess": "Subproceso",
+    "size_org": "Tamaño de la Organización",
+    "objective": "Objetivo del Diagnóstico",
+    "tools": "Herramientas del Pipeline",
+    "autonomy": "Nivel de Autonomía",
+    "retention": "Días de Retención",
+    "publish": "Publicar Reporte (requiere aprobación)",
+    "certificate": "Emitir Certificado",
+    "next": "Siguiente",
+    "back": "Atrás",
+    "submit": "Evaluar y Ejecutar",
+    "submitting": "Enviando..."
+  },
+  "pipeline": {
+    "title": "Ejecución del Pipeline",
+    "phase": {
+      "intake": "Recepción",
+      "research": "Investigación",
+      "mapping": "Mapeo",
+      "design": "Diseño",
+      "quantification": "Cuantificación",
+      "survey_design": "Diseño de Encuesta",
+      "analysis": "Análisis",
+      "synthesis": "Síntesis",
+      "reporting": "Reporte",
+      "qa": "Control de Calidad",
+      "rendering": "Generación"
+    },
+    "status": {
+      "pending": "Pendiente",
+      "running": "Ejecutando",
+      "completed": "Completado",
+      "failed": "Fallido"
+    },
+    "model": "Modelo",
+    "tokens": "Tokens",
+    "latency": "Latencia"
+  },
+  "review": {
+    "title": "Revisiones Pendientes",
+    "approve": "Aprobar",
+    "reject": "Rechazar",
+    "comment": "Comentario",
+    "comment_required": "El comentario es obligatorio al rechazar",
+    "type": {
+      "publication": "Publicación de Reporte",
+      "irr_followup": "Seguimiento IRR Bajo",
+      "critical_gap": "Brecha Crítica",
+      "autonomy_promotion": "Promoción de Autonomía"
+    }
+  },
+  "governance": {
+    "title": "Evaluación de Gobernanza",
+    "preflight": "Verificaciones Previas",
+    "execution": "Verificaciones de Ejecución",
+    "rule_pass": "Aprobado",
+    "rule_fail": "Fallido",
+    "rule_escalate": "Escalado",
+    "decision": "Decisión Final"
+  },
+  "common": {
+    "loading": "Cargando...",
+    "error": "Error",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "download": "Descargar",
+    "view": "Ver",
+    "created": "Creado",
+    "updated": "Actualizado"
+  }
+}

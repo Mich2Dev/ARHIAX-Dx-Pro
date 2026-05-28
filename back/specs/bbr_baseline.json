@@ -1,0 +1,45 @@
+{
+  "version": "2026.04",
+  "metrics": [
+    {
+      "name": "tool_calls_hora",
+      "expected_range": [0, 240],
+      "purpose": "Detect abnormal tool burst behavior."
+    },
+    {
+      "name": "latency_ms_p95",
+      "expected_range": [0, 5000],
+      "purpose": "Track execution latency against the packaged SLO."
+    },
+    {
+      "name": "ratio_escalado",
+      "expected_range": [0.0, 0.25],
+      "purpose": "Watch for excessive human escalations."
+    },
+    {
+      "name": "ratio_deny",
+      "expected_range": [0.0, 0.15],
+      "purpose": "Watch for abnormal denial rates."
+    },
+    {
+      "name": "tokens_promedio",
+      "expected_range": [0, 60000],
+      "purpose": "Track token consumption drift."
+    },
+    {
+      "name": "qa_score",
+      "expected_range": [85.0, 100.0],
+      "purpose": "Keep final quality inside the packaged minimum."
+    },
+    {
+      "name": "irr_alpha",
+      "expected_range": [0.7, 1.0],
+      "purpose": "Monitor inter-rater reliability for governance and promotion."
+    }
+  ],
+  "promotion_signal_window_days": 30,
+  "notes": [
+    "The baseline is evaluated by the client stack after installation.",
+    "Packaged governance uses the baseline as a promotion and anomaly input."
+  ]
+}
