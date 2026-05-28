@@ -1,0 +1,27 @@
+{
+  "subject": "pmel-capture-agent",
+  "interview_text": "El cliente recibe solicitudes por WhatsApp. El analista valida datos en una hoja compartida. Luego genera una cotizacion y espera aprobacion del gerente.",
+  "autonomy": {
+    "component": "capture_agent",
+    "requested_level": "A2"
+  },
+  "consent": {
+    "action": "ingest_to_llm",
+    "consents": {
+      "T1": true,
+      "T3": true
+    }
+  },
+  "aibom": {
+    "bundle_version": "1.0.0",
+    "models": ["claude-sonnet-4-7"],
+    "prompts": ["pmel-capture-v1"],
+    "owner": "Sinergia Consulting Group"
+  },
+  "execution": {
+    "component": "capture_agent",
+    "current_cycle": 1,
+    "last_outcome": "in_progress"
+  }
+}
+

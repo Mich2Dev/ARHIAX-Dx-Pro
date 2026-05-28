@@ -1,0 +1,93 @@
+{
+  "risk_profiles": {
+    "_comment": "Risk profile multipliers and sector-specific thresholds for PMEL deployments. Used by pricing (TR-034) and risk policies (TR-035).",
+    "sector_profiles": {
+      "financial": {
+        "risk_class": "high",
+        "regulatory_premium_pct": 25,
+        "requires_dpia": true,
+        "mandatory_tier_minimum": "pro_enterprise",
+        "sensitive_data_likely": false,
+        "additional_audits": [
+          "pentest_quarterly"
+        ]
+      },
+      "healthcare": {
+        "risk_class": "critical",
+        "regulatory_premium_pct": 20,
+        "requires_dpia": true,
+        "mandatory_tier_minimum": "pro_enterprise",
+        "sensitive_data_likely": true,
+        "additional_audits": [
+          "pentest_quarterly",
+          "hipaa_or_equivalent_review"
+        ]
+      },
+      "public_sector": {
+        "risk_class": "high",
+        "regulatory_premium_pct": 15,
+        "requires_dpia": true,
+        "mandatory_tier_minimum": "pro_enterprise",
+        "sensitive_data_likely": false,
+        "additional_audits": [
+          "procurement_conformity_review"
+        ]
+      },
+      "education": {
+        "risk_class": "medium",
+        "regulatory_premium_pct": 10,
+        "requires_dpia": false,
+        "mandatory_tier_minimum": "pro",
+        "sensitive_data_likely": true
+      },
+      "manufacturing": {
+        "risk_class": "low",
+        "regulatory_premium_pct": 0,
+        "requires_dpia": false,
+        "mandatory_tier_minimum": "lite",
+        "sensitive_data_likely": false
+      },
+      "retail": {
+        "risk_class": "low",
+        "regulatory_premium_pct": 0,
+        "requires_dpia": false,
+        "mandatory_tier_minimum": "lite",
+        "sensitive_data_likely": false
+      },
+      "professional_services": {
+        "risk_class": "low",
+        "regulatory_premium_pct": 0,
+        "requires_dpia": false,
+        "mandatory_tier_minimum": "lite",
+        "sensitive_data_likely": false
+      }
+    },
+    "jurisdiction_profiles": {
+      "CO": {
+        "name": "Colombia",
+        "data_protection_authority": "SIC",
+        "adequacy_with_us": "requires_prior_authorization"
+      },
+      "BR": {
+        "name": "Brazil",
+        "data_protection_authority": "ANPD",
+        "adequacy_with_us": "no_adequacy_decision"
+      },
+      "EU": {
+        "name": "European Union",
+        "data_protection_authority": "EDPB/DPA",
+        "adequacy_with_us": "dpf_current"
+      },
+      "UK": {
+        "name": "United Kingdom",
+        "data_protection_authority": "ICO",
+        "adequacy_with_us": "dpf_equivalent"
+      },
+      "US": {
+        "name": "United States",
+        "data_protection_authority": "state_level_varies",
+        "adequacy_with_us": "home"
+      }
+    }
+  }
+}
