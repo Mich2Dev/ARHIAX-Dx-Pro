@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arhiax-dx-agent"
+version = "5.1.0"
+description = "Governed organizational diagnostics agent aligned with ARHIAX Dx v5.1."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Proprietary"}
+authors = [
+  {name = "Sinergia Consulting Group S.A.S."}
+]
+dependencies = [
+  "cryptography>=42.0.0",
+  "fastapi>=0.115.0",
+  "pydantic>=2.8.0",
+  "uvicorn>=0.30.0",
+]
+
+[project.scripts]
+arhiax-dx-validate = "arhiax_dx.installation:main"
+arhiax-dx-install-bootstrap = "arhiax_dx.installation_assets:main"
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27.0",
+  "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]

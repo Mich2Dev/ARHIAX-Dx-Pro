@@ -1,0 +1,67 @@
+{
+  "version": "2026.04",
+  "primary_provider": "gemini",
+  "fallback_provider": "anthropic",
+  "failure_policy": {
+    "gemini_retry_status_codes": [429, 503],
+    "fallback_on_primary_exhaustion": true,
+    "deny_if_both_fail": true,
+    "hic_severity_if_both_fail": "MEDIUM"
+  },
+  "routes": [
+    {
+      "stage": "intake_fast",
+      "tools": ["g01_receptor", "g02_configurador", "g05_brechas", "g09b_ramificacion", "g10a_scoring", "g10b_psicometria"],
+      "primary": "gemini-2.0-flash",
+      "fallback": "claude-haiku-4-5-20251001",
+      "max_tokens": 4096,
+      "temperature": 0.2,
+      "note": "Intake y scoring: velocidad prioritaria"
+    },
+    {
+      "stage": "research_design",
+      "tools": ["g03_cienciometro", "g04_cartografo", "g06_bpmn_architect", "g07_cuellos", "g08_optimizador", "academic_search", "web_search", "bpmn_generator"],
+      "primary": "gemini-2.5-flash",
+      "fallback": "claude-sonnet-4-6",
+      "max_tokens": 8192,
+      "temperature": 0.3,
+      "note": "Investigación y BPMN: balance costo/calidad"
+    },
+    {
+      "stage": "survey_nlp",
+      "tools": ["g09a_preguntas", "g09c_validacion", "g11b_nlp", "g12_hallazgos", "irr_calculator", "scoring_engine"],
+      "primary": "gemini-2.5-flash",
+      "fallback": "claude-sonnet-4-6",
+      "max_tokens": 8192,
+      "temperature": 0.3,
+      "note": "Preguntas y NLP: precisión media"
+    },
+    {
+      "stage": "bayesian",
+      "tools": ["g11a_bayesiano"],
+      "primary": "gemini-2.5-pro",
+      "fallback": "claude-sonnet-4-6",
+      "max_tokens": 8192,
+      "temperature": 0.1,
+      "note": "Análisis estadístico: temperatura baja, máxima precisión"
+    },
+    {
+      "stage": "executive_writing",
+      "tools": ["g13_redactor"],
+      "primary": "gemini-2.5-pro",
+      "fallback": "claude-opus-4-7",
+      "max_tokens": 16384,
+      "temperature": 0.7,
+      "note": "Redacción ejecutiva: temperatura alta para fluidez narrativa"
+    },
+    {
+      "stage": "qa_assembly",
+      "tools": ["g14_qa_control", "docx_generator"],
+      "primary": "gemini-2.5-pro",
+      "fallback": "claude-opus-4-7",
+      "max_tokens": 16384,
+      "temperature": 0.2,
+      "note": "Control de calidad y certificación: rigor máximo"
+    }
+  ]
+}

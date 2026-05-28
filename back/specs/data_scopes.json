@@ -1,0 +1,47 @@
+{
+  "version": "2026.04",
+  "scopes": [
+    {
+      "name": "organizational_context",
+      "classification": "CONFIDENTIAL",
+      "retention_days": 30,
+      "notes": "Mandate context, domain metadata, and organization descriptors."
+    },
+    {
+      "name": "survey_responses",
+      "classification": "REGULATED",
+      "retention_days": 30,
+      "notes": "Only anonymized and minimized survey outputs are allowed."
+    },
+    {
+      "name": "academic_databases",
+      "classification": "REFERENCE",
+      "retention_days": 30,
+      "notes": "Academic literature sources used for evidence support."
+    },
+    {
+      "name": "patent_databases",
+      "classification": "REFERENCE",
+      "retention_days": 30,
+      "notes": "Patent and innovation context consulted for benchmarking."
+    },
+    {
+      "name": "web_sources",
+      "classification": "REFERENCE",
+      "retention_days": 30,
+      "notes": "Governed public web sources used for external context."
+    },
+    {
+      "name": "report_outputs",
+      "classification": "CONFIDENTIAL",
+      "retention_days": 30,
+      "notes": "Draft and final diagnostic outputs controlled by publication gates."
+    },
+    {
+      "name": "audit_log",
+      "classification": "RESTRICTED",
+      "retention_days": 30,
+      "notes": "Evidence ledger and diagnostic trace metadata."
+    }
+  ]
+}

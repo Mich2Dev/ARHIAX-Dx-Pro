@@ -1,0 +1,35 @@
+{
+  "version": "2026.04",
+  "controls": [
+    {
+      "policy_id": "DX-B01",
+      "title": "Identity and boundary control",
+      "rule_ids": ["DX-G1-IDENTITY", "DX-G2-BOUNDARY"],
+      "source": "ARHIAX Dx briefing v5.1"
+    },
+    {
+      "policy_id": "DX-B02",
+      "title": "Catalog-closed tool and operation control",
+      "rule_ids": ["DX-TOOLS-001", "DX-OPS-001", "DX-DATA-001"],
+      "source": "ARHIAX Dx briefing v5.1"
+    },
+    {
+      "policy_id": "DX-B03",
+      "title": "Autonomy and promotion control",
+      "rule_ids": ["DX-AUTONOMY-001", "DX-AUTONOMY-002", "DX-TOOLS-002"],
+      "source": "ARHIAX Dx briefing v5.1"
+    },
+    {
+      "policy_id": "DX-B04",
+      "title": "Data minimization and risk control",
+      "rule_ids": ["DX-DATA-002", "DX-DATA-003", "DX-RISK-001", "DX-RISK-002"],
+      "source": "ARHIAX Dx briefing v5.1"
+    },
+    {
+      "policy_id": "DX-B05",
+      "title": "Publication, QA, and evidence control",
+      "rule_ids": ["DX-QA-001", "DX-HIC-001", "DX-HIC-002", "DX-G5-EVIDENCE"],
+      "source": "ARHIAX Dx briefing v5.1"
+    }
+  ]
+}

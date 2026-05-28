@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Manrope:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+@layer base {
+  body {
+    @apply antialiased;
+    background: #f4f1ea;
+    color: #171717;
+    font-family: 'Manrope', sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  /* Quitar bordes redondeados por defecto en inputs y selects */
+  input, select, textarea, button {
+    border-radius: 0;
+  }
+}
+
+@layer components {
+  /* ── Sistema de diseño industrial ARHIAX ── */
+  .input {
+    @apply w-full border px-3 py-2 text-sm text-gray-900
+           placeholder-gray-400 focus:outline-none
+           transition-colors;
+    border-color: rgba(23,23,23,0.18);
+    border-radius: 0;
+    font-family: 'Manrope', sans-serif;
+    background: rgba(255,255,255,0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+  .input:focus {
+    border-color: #171717;
+    background: rgba(255,255,255,0.85);
+  }
+
+  .btn-primary {
+    @apply px-5 py-2 text-sm font-medium transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    background: #171717;
+    color: #f4f1ea;
+    border: 1px solid #171717;
+    border-radius: 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #222522;
+    border-color: #222522;
+  }
+
+  .btn-secondary {
+    @apply px-5 py-2 text-sm font-medium transition-colors;
+    background: transparent;
+    color: #706f69;
+    border: 1px solid rgba(23,23,23,0.18);
+    border-radius: 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .btn-secondary:hover {
+    border-color: #171717;
+    color: #171717;
+  }
+
+  .btn-danger {
+    @apply px-5 py-2 text-sm font-medium transition-colors disabled:opacity-50;
+    background: #8b3a3a;
+    color: #f4f1ea;
+    border: 1px solid #8b3a3a;
+    border-radius: 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: #7a3232;
+  }
+}
+
+@layer utilities {
+  .status-pending    { @apply bg-yellow-100 text-yellow-800; }
+  .status-running    { @apply bg-blue-100 text-blue-800; }
+  .status-awaiting   { @apply bg-orange-100 text-orange-800; }
+  .status-completed  { @apply bg-green-100 text-green-800; }
+  .status-denied     { @apply bg-red-100 text-red-800; }
+  .status-failed     { @apply bg-gray-100 text-gray-800; }
+
+  .rule-pass     { @apply text-green-600; }
+  .rule-fail     { @apply text-red-600; }
+  .rule-escalate { @apply text-orange-600; }
+  .rule-log      { @apply text-blue-600; }
+}
