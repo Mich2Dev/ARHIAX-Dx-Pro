@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
+import CanonicalGrammarPanel from './components/CanonicalGrammarPanel'
+import { canPublish, type GrammarReport, type GrammarException } from './lib/canonicalGrammar'
 
 type CaseRecord = {
   case_id: string
@@ -25,7 +27,7 @@ type RunResult = {
   reason?: string
 }
 
-const API_BASE = import.meta.env.VITE_DXPRO_API_URL ?? 'http://127.0.0.1:8000'
+const API_BASE = import.meta.env.VITE_DXPRO_API_URL ?? 'http://127.0.0.1:8310'
 
 const samplePayload = {
   consent: { action: 'ingest_to_llm', consents: { T1: true, T3: true } },
@@ -75,46 +77,75 @@ const samplePayload = {
   targets: ['markdown', 'docx', 'pdf'],
 }
 
+async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    ...init,
+  })
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`)
+  }
+  return response.json() as Promise<T>
+}
+
+function buildCaseText(
+  activeCase: CaseRecord | null,
+  result: RunResult | null,
+): string {
+  const parts: string[] = []
+  if (activeCase?.client?.legal_name) parts.push(`Cliente: ${activeCase.client.legal_name}`)
+  if (activeCase?.client?.name) parts.push(`Cliente: ${activeCase.client.name}`)
+  if (activeCase?.domain) parts.push(`Dominio: ${activeCase.domain}`)
+  if (activeCase?.case_status) parts.push(`Estado del caso: ${activeCase.case_status}`)
+  if (activeCase?.approval_status) parts.push(`Aprobación: ${activeCase.approval_status}`)
+  const outcomes = result?.artifact?.stage_outcomes
+  if (outcomes) {
+    for (const [stage, info] of Object.entries(outcomes)) {
+      if (info?.outcome) parts.push(`${stage}: ${info.outcome}`)
+    }
+  }
+  const files = activeCase?.files ?? result?.artifact?.files ?? []
+  for (const f of files) {
+    parts.push(`Archivo: ${f.target} — ${f.path} (${f.size_bytes ?? 0} bytes)`)
+  }
+  return parts.join('\n')
+}
+
 function App() {
   const [cases, setCases] = useState<CaseRecord[]>([])
   const [selectedCaseId, setSelectedCaseId] = useState('')
   const [selectedCase, setSelectedCase] = useState<CaseRecord | null>(null)
   const [result, setResult] = useState<RunResult | null>(null)
   const [payloadText, setPayloadText] = useState(JSON.stringify(samplePayload, null, 2))
+  const [tab, setTab] = useState<'workspace' | 'grammar'>('workspace')
   const [status, setStatus] = useState('ready')
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    void loadCases()
-  }, [])
-
-  async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${API_BASE}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-      ...init,
-    })
-    if (!response.ok) {
-      throw new Error(`${response.status} ${response.statusText}`)
-    }
-    return response.json() as Promise<T>
-  }
+  const [grammarReport, setGrammarReport] = useState<GrammarReport | null>(null)
+  const [grammarExceptions, setGrammarExceptions] = useState<GrammarException[]>([])
+  const [publishConfirmOpen, setPublishConfirmOpen] = useState(false)
 
   async function loadCases() {
     setError('')
     try {
-      const body = await request<{ cases: CaseRecord[] }>('/v1/cases')
+      const body = await apiRequest<{ cases: CaseRecord[] }>('/v1/cases')
       setCases(body.cases ?? [])
-    } catch (err) {
-      setError(`No se pudo conectar con DxPro Runtime en ${API_BASE}.`)
+    } catch {
+      setError(`No se pudo conectar con Dx Pro Runtime en ${API_BASE}.`)
     }
   }
+
+  useEffect(() => {
+    apiRequest<{ cases: CaseRecord[] }>('/v1/cases')
+      .then((body) => { setCases(body.cases ?? []) })
+      .catch(() => { setError(`No se pudo conectar con Dx Pro Runtime en ${API_BASE}.`) })
+  }, [])
 
   async function runCase() {
     setStatus('running')
     setError('')
     try {
       const payload = JSON.parse(payloadText)
-      const body = await request<RunResult>('/v1/agents/cases/run', {
+      const body = await apiRequest<RunResult>('/v1/agents/cases/run', {
         method: 'POST',
         body: JSON.stringify(payload),
       })
@@ -126,9 +157,9 @@ function App() {
         await loadCase(caseId)
       }
       setStatus('ready')
-    } catch (err) {
+    } catch (e) {
       setStatus('ready')
-      setError(err instanceof SyntaxError ? 'El JSON del caso no es válido.' : 'No se pudo ejecutar el caso.')
+      setError(e instanceof SyntaxError ? 'El JSON del caso no es válido.' : 'No se pudo ejecutar el caso.')
     }
   }
 
@@ -136,7 +167,7 @@ function App() {
     if (!caseId) return
     setError('')
     try {
-      const body = await request<CaseRecord>(`/v1/cases/${caseId}`)
+      const body = await apiRequest<CaseRecord>(`/v1/cases/${caseId}`)
       setSelectedCase(body)
       setSelectedCaseId(caseId)
     } catch {
@@ -144,20 +175,35 @@ function App() {
     }
   }
 
-  async function approve(action: 'approve' | 'publish' | 'reject') {
+  async function approve(
+    action: 'approve' | 'publish' | 'reject',
+    options?: { grammarConfirmed?: boolean },
+  ) {
     if (!selectedCaseId) return
     setStatus(action)
     setError('')
     try {
-      await request('/v1/agents/cases/approval', {
-        method: 'POST',
-        body: JSON.stringify({
-          consent: samplePayload.consent,
-          case_id: selectedCaseId,
-          action,
-          reviewer: { name: 'Consultor Lider', role: 'engagement_manager' },
-        }),
-      })
+      if (action === 'publish') {
+        await apiRequest(`/v1/cases/${selectedCaseId}/publish`, {
+          method: 'POST',
+          body: JSON.stringify({
+            case_id: selectedCaseId,
+            action: 'publish',
+            grammar_confirmed: options?.grammarConfirmed ?? false,
+            reviewer: { name: 'Consultor Lider', role: 'engagement_manager' },
+          }),
+        })
+      } else {
+        await apiRequest('/v1/agents/cases/approval', {
+          method: 'POST',
+          body: JSON.stringify({
+            consent: samplePayload.consent,
+            case_id: selectedCaseId,
+            action,
+            reviewer: { name: 'Consultor Lider', role: 'engagement_manager' },
+          }),
+        })
+      }
       await loadCases()
       await loadCase(selectedCaseId)
       setStatus('ready')
@@ -167,25 +213,72 @@ function App() {
     }
   }
 
+  function handlePublishClick() {
+    if (!selectedCaseId) return
+    if (!grammarReport) {
+      setPublishConfirmOpen(true)
+      return
+    }
+    const decision = canPublish(grammarReport, grammarExceptions.length > 0 ? grammarExceptions : undefined)
+    if (!decision.allowed) return
+    if (decision.confirmRequired) {
+      setPublishConfirmOpen(true)
+      return
+    }
+    void approve('publish')
+  }
+
+  function confirmPublish() {
+    setPublishConfirmOpen(false)
+    void approve('publish', { grammarConfirmed: true })
+  }
+
   const activeCase = selectedCase ?? cases[0]
   const files = activeCase?.files ?? result?.artifact?.files ?? []
   const stageOutcomes = result?.artifact?.stage_outcomes ?? {}
 
+  const caseText = useMemo(() => buildCaseText(activeCase, result), [activeCase, result])
+  const hasCase = !!(activeCase?.case_id ?? result?.artifact?.case_id)
+
+  const publishDecision = grammarReport
+    ? canPublish(grammarReport, grammarExceptions.length > 0 ? grammarExceptions : undefined)
+    : null
+
+  function publishTitle(): string {
+    if (!grammarReport) return 'Sin revisión canónica — publique solo si está seguro.'
+    if (!publishDecision?.allowed) return 'No se puede publicar. Hay hallazgos canónicos críticos pendientes.'
+    if (publishDecision?.confirmRequired) return 'Este expediente tiene hallazgos canónicos mayores. Para publicar debe corregirlos o justificar la excepción.'
+    return ''
+  }
+
+  function publishDisabled(): boolean {
+    if (!selectedCaseId) return true
+    if (!grammarReport) return false
+    if (!publishDecision?.allowed) return true
+    return false
+  }
+
+  function handleGrammarReport(r: GrammarReport | null) {
+    setGrammarReport(r)
+    setGrammarExceptions([])
+  }
+
   return (
     <main className="dx-shell">
       <aside className="rail" aria-label="Navegación principal">
-        <a className="brand" href="#workspace" aria-label="ARHIAX DxPro">
+        <a className="brand" href="#workspace" aria-label="ARHIAX Dx Pro">
           <img src="/logo-sinergia.png" alt="Sinergia Consulting Group" />
           <span>
             <strong>ARHIAX</strong>
-            <em>DxPro</em>
+            <em>Dx Pro</em>
           </span>
         </a>
         <nav>
-          <a href="#case-runner">Caso</a>
-          <a href="#evidence">Evidencia</a>
-          <a href="#approval">Aprobación</a>
-          <a href="#exports">Entregables</a>
+          <a href="#workspace" onClick={() => setTab('workspace')}>Caso</a>
+          <a href="#evidence" onClick={() => setTab('workspace')}>Evidencia</a>
+          <a href="#approval" onClick={() => setTab('workspace')}>Aprobación</a>
+          <a href="#exports" onClick={() => setTab('workspace')}>Entregables</a>
+          <a href="#grammar" onClick={() => setTab('grammar')} className={tab === 'grammar' ? 'active-tab' : ''}>Gramática</a>
         </nav>
         <div className="rail-status">
           <span>Runtime</span>
@@ -193,11 +286,24 @@ function App() {
         </div>
       </aside>
 
+      {tab === 'grammar' && (
+        <section className="workspace" id="grammar">
+          <header className="topbar">
+            <div>
+              <p className="section-code">§ 06 · revisión canónica</p>
+              <h1>Gramática</h1>
+            </div>
+          </header>
+          <CanonicalGrammarPanel onReport={handleGrammarReport} caseText={caseText} hasCase={hasCase} />
+        </section>
+      )}
+
+      {tab === 'workspace' && (
       <section className="workspace" id="workspace">
         <header className="topbar">
           <div>
             <p className="section-code">§ 05 · consola operativa</p>
-            <h1>ARHIAX DxPro</h1>
+            <h1>ARHIAX Dx Pro</h1>
           </div>
           <button className="icon-button" onClick={() => void loadCases()} title="Actualizar casos" type="button">
             ↻
@@ -211,7 +317,7 @@ function App() {
             <p className="section-code">§ caso diagnóstico</p>
             <h2>Ejecutar ciclo gobernado</h2>
             <p>
-              DxPro toma el caso, corre la fusión diagnóstica, genera reporte, renderiza, exporta y
+              Dx Pro toma el caso, corre la fusión diagnóstica, genera reporte, renderiza, exporta y
               deja el expediente en revisión.
             </p>
           </div>
@@ -291,11 +397,31 @@ function App() {
               <span>HIL</span>
               <strong>control humano</strong>
             </div>
+            <div className="canonical-status">
+              {!grammarReport && <span className="status-tag status-unreviewed">Sin revisión canónica</span>}
+              {grammarReport && publishDecision?.allowed && !publishDecision.confirmRequired && (
+                <span className="status-tag status-clean">Apto para publicación</span>
+              )}
+              {grammarReport && publishDecision?.allowed && publishDecision.confirmRequired && (
+                <span className="status-tag status-warn">Hallazgos mayores</span>
+              )}
+              {grammarReport && publishDecision && !publishDecision.allowed && (
+                <span className="status-tag status-blocked">Bloqueado por hallazgos críticos</span>
+              )}
+              {grammarReport && grammarExceptions.length > 0 && (
+                <span className="status-tag status-excepted">{grammarExceptions.length} excepción(es) registrada(s)</span>
+              )}
+            </div>
             <div className="approval-actions">
               <button onClick={() => void approve('approve')} disabled={!selectedCaseId} type="button">
                 Aprobar
               </button>
-              <button onClick={() => void approve('publish')} disabled={!selectedCaseId} type="button">
+              <button
+                onClick={handlePublishClick}
+                disabled={publishDisabled()}
+                title={publishTitle()}
+                type="button"
+              >
                 Publicar
               </button>
               <button onClick={() => void approve('reject')} disabled={!selectedCaseId} type="button">
@@ -322,6 +448,28 @@ function App() {
           </article>
         </section>
       </section>
+      )}
+
+      {publishConfirmOpen && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>Confirmar publicación</h3>
+            <p>
+              {grammarReport
+                ? 'Este expediente tiene hallazgos canónicos que requieren confirmación. ¿Está seguro de publicar?'
+                : 'No se ha ejecutado una revisión canónica de este expediente. ¿Desea publicar de todas formas?'}
+            </p>
+            <div className="modal-actions">
+              <button className="primary-action" onClick={() => void confirmPublish()} type="button">
+                Sí, publicar
+              </button>
+              <button className="secondary-action" onClick={() => setPublishConfirmOpen(false)} type="button">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

@@ -483,6 +483,8 @@ def test_report_export_agent_generates_markdown_docx_and_pdf(tmp_path: Path) -> 
     assert "Compañía Niño Ñandú S.A.S." in combined
     assert Path(pdf_path).exists()
     assert Path(pdf_path).stat().st_size > 0
+    assert "grammar_report" in artifact
+    assert "report_status" in artifact
 
 
 def test_run_diagnostic_case_agent_persists_case_and_files(tmp_path: Path) -> None:
@@ -573,6 +575,7 @@ def test_case_approval_workflow_transitions_case(tmp_path: Path) -> None:
             "consent": _consent(),
             "case_id": case_id,
             "action": "publish",
+            "grammar_confirmed": True,
             "reviewer": {"name": "Consultor Líder", "role": "engagement_manager"},
         },
     )

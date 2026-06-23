@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Security
 
-from .api_models import AgentExecuteRequest, CertificateVerifyRequest, DiagnosticEvaluateRequest, PmelCaptureRequest, PmelPolicyRequest, PmelStepRequest
+from .api_models import AgentExecuteRequest, CertificateVerifyRequest, DiagnosticEvaluateRequest, GrammarLintRequest, GrammarPublishRequest, PmelCaptureRequest, PmelPolicyRequest, PmelStepRequest
 from .auth import ApiKeyAuth, api_key_header
 from .case_store import CaseStore
 from .capture_agent import PmelCaptureAgent
@@ -38,6 +38,8 @@ from .pro_agents import (
     RgcAgent,
     RgcDeepResearchContrasterAgent,
 )
+from .grammar import GrammarService
+from .grammar.models import GrammarAudience, GrammarException
 from .rate_limit import NullRateLimiter, RateLimiter
 from .report_exports import ReportExportService
 from .runtime import DxProRuntime
@@ -78,7 +80,8 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     llm_client = LlmClient(config.anthropic_api_key) if config.anthropic_api_key else None
     capture_agent = PmelCaptureAgent(runtime)
     case_store = CaseStore(config.case_store_root)
-    export_service = ReportExportService(config.export_root)
+    grammar_service = GrammarService(config.case_store_root)
+    export_service = ReportExportService(config.export_root, grammar_service=grammar_service)
     verb_lexicon_path = config.policy_bundle_path / "data" / "lexicon_verbs_es.json"
     fusion_agent = DiagnosticFusionCycleAgent(runtime, llm_client)
     report_agent = ExecutiveReportAgent(runtime, llm_client)
@@ -132,6 +135,7 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     app.state.diagnostics = diagnostics
     app.state.case_store = case_store
     app.state.export_service = export_service
+    app.state.grammar_service = grammar_service
 
     # ----- Public endpoints (no auth, for load balancers and discovery) -----
     @app.get("/")
@@ -179,6 +183,10 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
                 "POST /v1/agents/report/export",
                 "POST /v1/agents/cases/run",
                 "POST /v1/agents/cases/approval",
+                "POST /v1/agents/grammar/lint",
+                "POST /v1/dxpro/agents/grammar/lint",
+                "GET /v1/cases/{case_id}/grammar",
+                "POST /v1/cases/{case_id}/publish",
                 "GET /v1/cases",
                 "GET /v1/cases/{case_id}",
             ],
@@ -371,7 +379,101 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
     @app.post("/v1/agents/cases/approval", dependencies=protected)
     @app.post("/v1/dxpro/agents/cases/approval", dependencies=protected)
     def run_case_approval(request: AgentExecuteRequest) -> dict[str, Any]:
-        return pro_agents["case_approval"].execute(request.to_payload())
+        payload = request.to_payload()
+        action = str(payload.get("action", ""))
+        case_id = str(payload.get("case_id", ""))
+        if action == "publish" and case_id:
+            decision = grammar_service.check_publish(case_id)
+            if not decision.allowed:
+                return {
+                    "case_id": case_id,
+                    "action": "publish",
+                    "approved": False,
+                    "reason": decision.reason,
+                    "grammar_blocked": True,
+                    "grammar_bypass_detected": True,
+                }
+            if decision.confirm_required:
+                grammar_confirmed = payload.get("grammar_confirmed", False)
+                if not grammar_confirmed:
+                    return {
+                        "case_id": case_id,
+                        "action": "publish",
+                        "approved": False,
+                        "reason": "Se requiere confirmación gramatical. Envíe grammar_confirmed=true.",
+                        "grammar_confirm_required": True,
+                        "grammar_bypass_detected": True,
+                    }
+        return pro_agents["case_approval"].execute(payload)
+
+    # --- Gramática Canónica ARHIAX ---
+    @app.post("/v1/agents/grammar/lint", dependencies=protected)
+    @app.post("/v1/dxpro/agents/grammar/lint", dependencies=protected)
+    def grammar_lint(request: GrammarLintRequest) -> dict[str, Any]:
+        if not request.text or not request.text.strip():
+            raise HTTPException(status_code=400, detail={"error": "text_empty", "message": "El texto no puede estar vacío."})
+
+        if request.audience not in ("internal", "client", "technical", "executive"):
+            raise HTTPException(status_code=400, detail={"error": "invalid_audience", "message": f"Audiencia inválida: {request.audience}"})
+
+        exceptions = [
+            GrammarException(**e) for e in request.exceptions
+            if e.get("reason", "").strip()
+        ]
+
+        report = grammar_service.run_lint(
+            text=request.text,
+            audience=cast(GrammarAudience, request.audience),
+            source=request.source,
+            case_id=request.case_id,
+            exceptions=exceptions,
+        )
+        return report.model_dump(mode="json")
+
+    @app.get("/v1/cases/{case_id}/grammar", dependencies=protected)
+    def get_case_grammar(case_id: str) -> dict[str, Any]:
+        summary = grammar_service.get_case_grammar(case_id)
+        return summary.model_dump(mode="json")
+
+    @app.post("/v1/cases/{case_id}/publish", dependencies=protected)
+    def publish_case(case_id: str, request: GrammarPublishRequest) -> dict[str, Any]:
+        case = case_store.load(case_id)
+        if case is None:
+            raise HTTPException(status_code=404, detail={"error": "case_not_found", "case_id": case_id})
+
+        decision = grammar_service.check_publish(case_id)
+
+        if not decision.allowed:
+            return {
+                "case_id": case_id,
+                "action": "publish",
+                "approved": False,
+                "reason": decision.reason,
+                "grammar_blocked": True,
+            }
+
+        if decision.confirm_required and not request.grammar_confirmed:
+            return {
+                "case_id": case_id,
+                "action": "publish",
+                "approved": False,
+                "reason": "Se requiere confirmación gramatical. Envíe grammar_confirmed=true.",
+                "grammar_confirm_required": True,
+            }
+
+        case_store.append_history(case_id, {
+            "action": "publish",
+            "grammar_checked": True,
+            "grammar_score": decision.model_dump(mode="json") if decision else None,
+            "reviewer": request.reviewer,
+        })
+
+        return {
+            "case_id": case_id,
+            "action": "publish",
+            "approved": True,
+            "reason": "Publicación aprobada. Gramática canónica verificada.",
+        }
 
     return app
 

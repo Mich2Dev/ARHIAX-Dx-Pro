@@ -12,11 +12,15 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
+from .grammar import GrammarService
+from .grammar.lint import lint_text
+
 
 class ReportExportService:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, grammar_service: GrammarService | None = None) -> None:
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
+        self.grammar_service = grammar_service
 
     def export(
         self,
@@ -29,6 +33,26 @@ class ReportExportService:
         case_root.mkdir(parents=True, exist_ok=True)
         exports = []
         markdown = str(render_pack.get("markdown", ""))
+
+        if markdown.strip():
+            report = lint_text(markdown, source="executive_report")
+            if not report.publish_decision.allowed:
+                if "draft" in targets:
+                    report_pack["grammar_report"] = report.model_dump(mode="json")
+                    report_pack["report_status"] = "draft_requires_canonical_review"
+                else:
+                    raise RuntimeError(
+                        f"Export bloqueado por gramática canónica. "
+                        f"Críticos: {report.critical}. "
+                        f"Corrija antes de exportar como publicación final."
+                    )
+            elif report.publish_decision.confirm_required:
+                report_pack["grammar_report"] = report.model_dump(mode="json")
+                report_pack["report_status"] = "consultant_review_required"
+            else:
+                report_pack["grammar_report"] = report.model_dump(mode="json")
+            if self.grammar_service:
+                self.grammar_service.save_grammar_report(case_id, report.model_dump(mode="json"))
 
         if "markdown" in targets:
             path = case_root / "executive-report.md"

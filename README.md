@@ -17,7 +17,7 @@ Current state: **preproduction functional product**.
 - Backend runtime is implemented with FastAPI under `src/dxpro_runtime`.
 - Frontend operating console is implemented under `frontend/arhiax-dxpro-site`.
 - CI is green on `main`.
-- Local validation currently covers `92` backend tests.
+- Local validation currently covers `127` backend tests.
 - The system can run a governed diagnostic case end to end and produce Markdown, DOCX and PDF deliverables.
 
 ## What DX Pro Does
@@ -107,10 +107,10 @@ npm run dev
 The frontend uses this API base by default:
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:8310
 ```
 
-Override it with:
+Set it explicitly for deployment:
 
 ```powershell
 $env:VITE_DXPRO_API_URL = "http://127.0.0.1:8310"

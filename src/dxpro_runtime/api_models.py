@@ -60,3 +60,18 @@ class DiagnosticEvaluateRequest(FlexiblePayload):
 
 class CertificateVerifyRequest(BaseModel):
     certificate: dict[str, Any]
+
+
+class GrammarLintRequest(BaseModel):
+    text: str
+    audience: str = "client"
+    source: str = "manual"
+    case_id: str | None = None
+    exceptions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class GrammarPublishRequest(BaseModel):
+    case_id: str
+    action: str = "publish"
+    grammar_confirmed: bool = False
+    reviewer: dict[str, Any] = Field(default_factory=dict)

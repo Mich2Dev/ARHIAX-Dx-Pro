@@ -1117,6 +1117,8 @@ class ReportExportAgent(GovernedAgent):
             "targets": targets,
             "files": files,
             "publication_gate": report_pack.get("publication_gate", "consultant_review_required"),
+            "report_status": report_pack.get("report_status"),
+            "grammar_report": report_pack.get("grammar_report"),
         }
 
 

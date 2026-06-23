@@ -1,0 +1,238 @@
+export type GrammarSeverity = 'critical' | 'major' | 'minor' | 'advisory'
+export type GrammarAudience = 'internal' | 'client' | 'technical' | 'executive'
+
+export type CanonicalGrammarRule = {
+  id: string
+  block: string
+  title: string
+  severity: GrammarSeverity
+  audience?: GrammarAudience[]
+  pattern: RegExp
+  suggestion?: string
+  rationale: string
+}
+
+export const GRAMMAR_RULES: CanonicalGrammarRule[] = [
+  // 7.1 Encoding y caracteres rotos
+  {
+    id: 'GC-01-ENCODING-001',
+    block: 'Bloque 5 — Ortografía',
+    title: 'Caracteres rotos (mojibake)',
+    severity: 'critical',
+    pattern: /[\u00C3\u00C2\u00E2\uFFFD]/,
+    suggestion: 'Revise encoding UTF-8, tildes, ñ y signos de apertura.',
+    rationale: 'El texto contiene caracteres incompatibles con una entrega canónica ARHIAX.',
+  },
+  // 7.2 Terminología invariante
+  {
+    id: 'GC-02-TERM-001',
+    block: 'Bloque 8 — Terminología invariante',
+    title: 'ARHIAX debe escribirse en mayúsculas',
+    severity: 'major',
+    audience: ['client', 'executive'],
+    pattern: /(?<![A-ZÁÉÍÓÚ])Arhiax(?![A-ZÁÉÍÓÚ])/g,
+    suggestion: 'ARHIAX',
+    rationale: 'ARHIAX es sigla del corpus y se escribe siempre en versales.',
+  },
+  {
+    id: 'GC-02-TERM-002',
+    block: 'Bloque 8 — Terminología invariante',
+    title: 'ARHIAX debe escribirse en mayúsculas',
+    severity: 'major',
+    audience: ['client', 'executive'],
+    pattern: /\barhiax\b/gi,
+    suggestion: 'ARHIAX',
+    rationale: 'ARHIAX es sigla del corpus y se escribe siempre en versales.',
+  },
+  {
+    id: 'GC-02-TERM-003',
+    block: 'Bloque 8 — Terminología invariante',
+    title: 'DxPro debe escribirse como Dx Pro',
+    severity: 'major',
+    audience: ['client', 'executive'],
+    pattern: /\bDxPro\b(?!\s*(?:\/|en|como|en\s+identificadores))/g,
+    suggestion: 'Dx Pro',
+    rationale: 'La forma canónica del producto separa Dx y Pro con espacio.',
+  },
+  {
+    id: 'GC-02-TERM-004',
+    block: 'Bloque 8 — Terminología invariante',
+    title: 'DXPRO debe escribirse como Dx Pro',
+    severity: 'major',
+    audience: ['client', 'executive'],
+    pattern: /\bDXPRO\b(?![\s\S]*?(?:identificador|package|ruta|endpoint))/g,
+    suggestion: 'Dx Pro',
+    rationale: 'La forma canónica del producto usa mayúscula inicial en cada palabra.',
+  },
+  {
+    id: 'GC-02-TERM-005',
+    block: 'Bloque 8 — Terminología invariante',
+    title: 'Governex debe escribirse como Governex Thinking',
+    severity: 'major',
+    audience: ['client', 'executive'],
+    pattern: /\bGovernex\b(?!\s+Thinking)/g,
+    suggestion: 'Governex Thinking',
+    rationale: 'El nombre completo del sistema incluye "Thinking".',
+  },
+  // 7.3 Coma de Oxford
+  {
+    id: 'GC-03-OXFORD-001',
+    block: 'Bloque 3 — Coma de Oxford',
+    title: 'Coma de Oxford detectada',
+    severity: 'major',
+    pattern: /,\s*(?:y|e|o|u)\s+(?=\S)/g,
+    suggestion: 'Suprimir la coma antes de la conjunción.',
+    rationale: 'La coma serial es ajena a la ortografía del español normativo.',
+  },
+  // 7.4 Calcos del inglés
+  {
+    id: 'GC-04-CALCO-001',
+    block: 'Bloque 4 — Calcos del inglés',
+    title: 'Calco: «hacer sentido»',
+    severity: 'major',
+    pattern: /\b(?:hace|hacen|hacer)\s+sentido\b/gi,
+    suggestion: 'tener sentido / ser coherente',
+    rationale: 'Calco del inglés "make sense".',
+  },
+  {
+    id: 'GC-04-CALCO-002',
+    block: 'Bloque 4 — Calcos del inglés',
+    title: 'Calco: «en base a»',
+    severity: 'major',
+    pattern: /en\s+base\s+a/gi,
+    suggestion: 'con base en / a partir de',
+    rationale: 'Construcción calcada del inglés "based on".',
+  },
+  {
+    id: 'GC-04-CALCO-003',
+    block: 'Bloque 4 — Calcos del inglés',
+    title: 'Calco: «a nivel de»',
+    severity: 'major',
+    pattern: /a\s+nivel\s+de/gi,
+    suggestion: 'en / respecto de / en el plano de',
+    rationale: 'Construcción calcada del inglés "at the level of".',
+  },
+  {
+    id: 'GC-04-CALCO-004',
+    block: 'Bloque 4 — Calcos del inglés',
+    title: 'Calco: «sustantivo + a + infinitivo»',
+    severity: 'major',
+    pattern: /(?:temas|documentos|decisiones|puntos|asuntos|cuestiones|aspectos)\s+a\s+(?:tratar|revisar|tomar|considerar|evaluar|resolver)/gi,
+    suggestion: 'temas/documentos/decisiones por tratar, pendientes de revisión, que hay que tomar',
+    rationale: 'Estructura "sustantivo + a + infinitivo" calca el inglés noun + to + infinitive.',
+  },
+  {
+    id: 'GC-04-CALCO-005',
+    block: 'Bloque 4 — Calcos del inglés',
+    title: 'Calco: «suena bien»',
+    severity: 'major',
+    pattern: /suena\s+bien/gi,
+    suggestion: 'me parece correcto / está bien',
+    rationale: 'Giro conversacional calcado del inglés "sounds good".',
+  },
+  {
+    id: 'GC-04-CALCO-006',
+    block: 'Bloque 4 — Calcos del inglés',
+    title: 'Calco: «se ve bien»',
+    severity: 'major',
+    pattern: /se\s+ve\s+bien/gi,
+    suggestion: 'parece adecuado / parece correcto',
+    rationale: 'Giro conversacional calcado del inglés "looks good".',
+  },
+  // 7.5 Falsa fluidez
+  {
+    id: 'GC-05-FLUID-001',
+    block: 'Bloque 6 — Falsa fluidez',
+    title: 'Coletilla: «Es importante mencionar que»',
+    severity: 'minor',
+    pattern: /es\s+importante\s+mencionar\s+que/gi,
+    suggestion: 'Suprimir la coletilla y comenzar con la afirmación principal.',
+    rationale: 'Coletilla que debilita la prosa sin aportar contenido.',
+  },
+  {
+    id: 'GC-05-FLUID-002',
+    block: 'Bloque 6 — Falsa fluidez',
+    title: 'Coletilla: «Cabe señalar que»',
+    severity: 'minor',
+    pattern: /cabe\s+señalar\s+que/gi,
+    suggestion: 'Suprimir la coletilla y comenzar con la afirmación principal.',
+    rationale: 'Coletilla que debilita la prosa sin aportar contenido.',
+  },
+  {
+    id: 'GC-05-FLUID-003',
+    block: 'Bloque 6 — Falsa fluidez',
+    title: 'Coletilla: «En este sentido»',
+    severity: 'minor',
+    pattern: /en\s+este\s+sentido\s*[,;]/gi,
+    suggestion: 'Suprimir la coletilla y comenzar con la afirmación principal.',
+    rationale: 'Coletilla que debilita la prosa sin aportar contenido.',
+  },
+  {
+    id: 'GC-05-FLUID-004',
+    block: 'Bloque 6 — Falsa fluidez',
+    title: 'Coletilla: «Vale la pena destacar que»',
+    severity: 'minor',
+    pattern: /vale\s+la\s+pena\s+destacar\s+que/gi,
+    suggestion: 'Suprimir la coletilla y comenzar con la afirmación principal.',
+    rationale: 'Coletilla que debilita la prosa sin aportar contenido.',
+  },
+  {
+    id: 'GC-05-FLUID-005',
+    block: 'Bloque 6 — Falsa fluidez',
+    title: 'Coletilla: «Resulta pertinente indicar que»',
+    severity: 'minor',
+    pattern: /resulta\s+pertinente\s+indicar\s+que/gi,
+    suggestion: 'Suprimir la coletilla y comenzar con la afirmación principal.',
+    rationale: 'Coletilla que debilita la prosa sin aportar contenido.',
+  },
+  // 7.6 Ortografía RAE básica: meses con mayúscula
+  {
+    id: 'GC-06-RAE-001',
+    block: 'Bloque 5 — Ortografía RAE',
+    title: 'Mes con mayúscula inicial',
+    severity: 'minor',
+    pattern: /\b(?:Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre)\b(?!\s*:)/g,
+    suggestion: 'Los meses se escriben con minúscula inicial en español.',
+    rationale: 'La RAE establece minúscula inicial para meses y días de la semana.',
+  },
+  {
+    id: 'GC-06-RAE-002',
+    block: 'Bloque 5 — Ortografía RAE',
+    title: 'Día de la semana con mayúscula inicial',
+    severity: 'minor',
+    pattern: /\b(?:Lunes|Martes|Miércoles|Jueves|Viernes|Sábado|Domingo)\b(?!\s*:)/g,
+    suggestion: 'Los días de la semana se escriben con minúscula inicial en español.',
+    rationale: 'La RAE establece minúscula inicial para meses y días de la semana.',
+  },
+  // 7.7 Registro interno vs externo
+  {
+    id: 'GC-07-REG-001',
+    block: 'Bloque 9 — Gestión de audiencias',
+    title: 'Término interno: «custodio» en texto para cliente',
+    severity: 'advisory',
+    audience: ['client', 'executive'],
+    pattern: /\bcustodio\b/gi,
+    suggestion: 'profesional certificado que firma y responde',
+    rationale: 'Término interno del corpus; debe traducirse al registro externo para clientes.',
+  },
+  {
+    id: 'GC-07-REG-002',
+    block: 'Bloque 9 — Gestión de audiencias',
+    title: 'Término interno: «desvelamiento» en texto para cliente',
+    severity: 'advisory',
+    audience: ['client', 'executive'],
+    pattern: /\bdesvelamiento\b/gi,
+    suggestion: 'hallazgo',
+    rationale: 'Término interno del corpus; debe traducirse al registro externo para clientes.',
+  },
+  {
+    id: 'GC-07-REG-003',
+    block: 'Bloque 9 — Gestión de audiencias',
+    title: 'Término interno: «umbral» en texto para cliente',
+    severity: 'advisory',
+    audience: ['client', 'executive'],
+    pattern: /\bumbral(?:es)?\b/gi,
+    suggestion: 'nivel de certificación / alcance',
+    rationale: 'Término interno del corpus; debe traducirse al registro externo para clientes.',
+  },
+]
