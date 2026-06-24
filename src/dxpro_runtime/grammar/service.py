@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -59,7 +60,6 @@ class GrammarService:
         path = self._case_path(case_id)
         data: dict[str, Any] = {}
         if path.exists():
-            import json
             data = json.loads(path.read_text(encoding="utf-8"))
 
         data["grammar"] = {
@@ -67,16 +67,12 @@ class GrammarService:
             "exceptions": [e.model_dump(mode="json") for e in exceptions],
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        path.write_text(
-            __import__("json").dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _load_case(self, case_id: str) -> dict[str, Any] | None:
         path = self._case_path(case_id)
         if not path.exists():
             return None
-        import json
         data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
         return data.get("grammar")
 

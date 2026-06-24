@@ -476,6 +476,3 @@ def create_app(config: RuntimeConfig | None = None) -> FastAPI:
         }
 
     return app
-
-
-app = create_app()

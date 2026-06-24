@@ -53,7 +53,9 @@ class DxProRuntime:
     def run_step(self, payload: dict[str, Any]) -> StepDecision:
         trace_id = payload.get("trace_id") or str(uuid.uuid4())
         subject = payload.get("subject", "pmel-runtime")
-        packages = payload.get("packages") or self._default_step_packages(payload)
+        packages = payload.get("packages")
+        if packages is None:
+            packages = self._default_step_packages(payload)
         step_input = payload.get("input", {})
         decisions: list[dict[str, Any]] = []
         raw_decisions: list[PolicyDecision] = []
