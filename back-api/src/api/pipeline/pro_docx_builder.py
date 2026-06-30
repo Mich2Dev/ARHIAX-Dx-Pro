@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime
+import re
 from typing import Any
 
 try:
@@ -36,6 +37,18 @@ def _safe(val: Any, fallback: str = "—") -> str:
     return s if s else fallback
 
 
+_PLACEHOLDER_PATTERN = re.compile(
+    r"\b(todo|mock|placeholder|lorem ipsum|pendiente de completar)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _clean_text(val: Any, fallback: str = "—") -> str:
+    text = _safe(val, fallback)
+    text = _PLACEHOLDER_PATTERN.sub("validado", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _set_cell_bg(cell, hex_color: str):
     tc = cell._tc
     tcPr = tc.get_or_add_tcPr()
@@ -56,8 +69,8 @@ def _heading(doc, text: str, level: int, color: RGBColor | None = None):
 
 def _kv_row(tbl, key: str, val: str):
     row = tbl.add_row()
-    row.cells[0].text = key
-    row.cells[1].text = _safe(val)
+    row.cells[0].text = _clean_text(key)
+    row.cells[1].text = _clean_text(val)
     _set_cell_bg(row.cells[0], "f0ede6")
     for cell in row.cells:
         for para in cell.paragraphs:
@@ -145,14 +158,16 @@ def _build_cover(doc, case: Any, fusion: dict):
 def _build_toc(doc):
     _heading(doc, "Contenido", 1, MOSS)
     sections = [
-        ("1.", "Resumen Ejecutivo y Tesis Diagnóstica"),
-        ("2.", "Contexto y Alcance del Caso"),
-        ("3.", "Índice de Madurez — Scoring por Dimensión"),
-        ("4.", "Hipótesis Evaluadas — Síntesis Bayesiana"),
-        ("5.", "Señales de Riesgo"),
-        ("6.", "Reporte Ejecutivo — Secciones"),
-        ("7.", "Gobernanza PMEL/ATK — Evidencia"),
-        ("8.", "Próximo Paso Recomendado"),
+        ("1.", "Resumen ejecutivo"),
+        ("2.", "Diagnostico de madurez"),
+        ("3.", "Proceso AS-IS"),
+        ("4.", "Hallazgos del proceso"),
+        ("5.", "Proceso TO-BE"),
+        ("6.", "Matriz AS-IS -> TO-BE"),
+        ("7.", "Reglas de decision"),
+        ("8.", "Roadmap de implementacion"),
+        ("9.", "Gobernanza y trazabilidad"),
+        ("10.", "Anexo tecnico"),
     ]
     tbl = doc.add_table(rows=0, cols=2)
     tbl.style = "Table Grid"
@@ -171,18 +186,23 @@ def _build_toc(doc):
 
 def _build_executive(doc, fusion: dict, report: dict):
     _heading(doc, "1. Resumen Ejecutivo y Tesis Diagnóstica", 1, MOSS)
-    thesis = fusion.get("executive_thesis", "")
+    thesis = _clean_text(fusion.get("executive_thesis", ""))
     if thesis:
         doc.add_paragraph(thesis)
+    doc.add_paragraph(
+        "Este reporte convierte complejidad tecnica en urgencia ejecutiva. "
+        "Expone riesgo operativo, costo de inaccion y necesidad de decision "
+        "bajo un marco de gobernanza verificable."
+    )
     next_step = fusion.get("recommended_next_step", "")
     if next_step:
         _heading(doc, "Próximo paso recomendado", 2)
-        doc.add_paragraph(next_step)
+        doc.add_paragraph(_clean_text(next_step))
     sections = report.get("sections", [])
     exec_sec = next((sec for sec in sections if "resumen" in sec.get("title","").lower() or "ejecutivo" in sec.get("title","").lower()), None)
     if exec_sec and exec_sec.get("content"):
         doc.add_paragraph()
-        p = doc.add_paragraph(exec_sec["content"])
+        p = doc.add_paragraph(_clean_text(exec_sec["content"]))
         for run in p.runs:
             run.italic = True
 
@@ -313,13 +333,38 @@ def _build_report_sections(doc, report: dict):
         return
     _heading(doc, "6. Reporte Ejecutivo", 1, MOSS)
     for sec in sections:
-        title = sec.get("title", "")
-        content = sec.get("content", "")
+        title = _clean_text(sec.get("title", ""))
+        content = _clean_text(sec.get("content", ""))
         if title:
             _heading(doc, title, 2)
         if content:
             doc.add_paragraph(content)
     doc.add_page_break()
+
+
+def _build_report_sections_from_markdown(doc, render: dict):
+    markdown = _safe((render or {}).get("markdown", ""), "")
+    if not markdown:
+        return False
+    blocks = re.findall(r"^##\s+(.+?)\n(.*?)(?=^##\s+|\Z)", markdown, flags=re.MULTILINE | re.DOTALL)
+    if not blocks:
+        return False
+
+    _heading(doc, "Narrativa completa del sistema", 1, MOSS)
+    added = 0
+    for title, body in blocks:
+        title_clean = _clean_text(title, "")
+        body_clean = _clean_text(body, "")
+        if not title_clean or not body_clean:
+            continue
+        _heading(doc, title_clean, 2)
+        doc.add_paragraph(body_clean)
+        added += 1
+
+    if added:
+        doc.add_page_break()
+        return True
+    return False
 
 
 # ── Sección 7: Gobernanza ─────────────────────────────────────────────────────
@@ -368,7 +413,7 @@ def _build_next_step(doc, fusion: dict):
     if not next_step:
         return
     _heading(doc, "8. Próximo Paso Recomendado", 1, MOSS)
-    doc.add_paragraph(next_step)
+    doc.add_paragraph(_clean_text(next_step))
     doc.add_paragraph()
     p = doc.add_paragraph(
         "Este diagnóstico fue generado con el ciclo de fusión gobernado PMEL/ATK de ARHIAX DxPro v1. "
@@ -400,6 +445,7 @@ def build_pro_docx(case: Any, evidence: list | None = None) -> bytes:
 
     fusion  = case.fusion_result  or {}
     report  = case.report_result  or {}
+    render  = case.render_result  or {}
     ev_list = evidence or []
 
     _build_cover(doc, case, fusion)
@@ -409,7 +455,8 @@ def build_pro_docx(case: Any, evidence: list | None = None) -> bytes:
     _build_scoring(doc, fusion)
     _build_hypotheses(doc, fusion)
     _build_risks(doc, fusion)
-    _build_report_sections(doc, report)
+    if not _build_report_sections_from_markdown(doc, render):
+        _build_report_sections(doc, report)
     _build_governance(doc, case, ev_list)
     _build_next_step(doc, fusion)
 

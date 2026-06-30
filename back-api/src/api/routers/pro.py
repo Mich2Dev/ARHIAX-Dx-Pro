@@ -32,6 +32,7 @@ from api.auth import get_current_user
 from api.db import get_db, get_async_session_local
 from api.models import User
 from api.models.pro import ProCase, ProEvidence, ProSurveySession, ProSurveyResponse
+from api.services.grammar_gate import lint_markdown
 
 router = APIRouter(prefix="/pro", tags=["pro"])
 
@@ -63,6 +64,21 @@ class ApprovalIn(BaseModel):
     comment: str | None = None
     reviewer_name: str | None = None
     reviewer_role: str | None = None
+    grammar_confirmed: bool = False
+
+
+class PublishIn(BaseModel):
+    comment: str | None = None
+    reviewer_name: str | None = None
+    reviewer_role: str | None = None
+    grammar_confirmed: bool = False
+
+
+class GrammarLintIn(BaseModel):
+    text: str
+    audience: str = "executive"
+    source: str = "manual"
+    case_id: str | None = None
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -129,6 +145,9 @@ def _case_detail(c: ProCase) -> dict:
         "report_result": c.report_result,
         "render_result": c.render_result,
         "export_result": c.export_result,
+        "grammar": (c.render_result or {}).get("grammar_report"),
+        "report_status": (c.export_result or {}).get("report_status")
+        or ((c.render_result or {}).get("grammar_report") or {}).get("report_status"),
         "deliverables": c.deliverables or [],
         "reviewer_name": c.reviewer_name,
         "reviewer_role": c.reviewer_role,
@@ -165,6 +184,27 @@ def _evidence_summary(e: ProEvidence) -> dict:
         "outcome": e.outcome, "package": e.package, "agent": e.agent,
         "created_at": e.created_at.isoformat() if e.created_at else None,
     }
+
+
+def _ensure_case_grammar_report(case: ProCase) -> dict:
+    """Ensure case has an up-to-date grammar report tied to markdown hash."""
+    from api.pipeline.pro_markdown_builder import build_pro_markdown
+
+    render = case.render_result or {}
+    markdown = render.get("markdown") or build_pro_markdown(case)
+    current_hash = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+    grammar_report = render.get("grammar_report") or {}
+
+    if not grammar_report or grammar_report.get("source_hash") != current_hash:
+        grammar_report = lint_markdown(
+            markdown,
+            source=f"pro_case:{case.case_id}",
+            audience="executive",
+        )
+        case.render_result = {**render, "markdown": markdown, "grammar_report": grammar_report}
+        case.export_result = {**(case.export_result or {}), "report_status": grammar_report.get("report_status")}
+
+    return grammar_report
 
 
 def _generate_question_bank(roles: list[str], dimensions: list[str], domain: str, hypotheses: list[str]) -> dict:
@@ -961,10 +1001,35 @@ async def approve_case(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    result = await db.execute(select(ProCase).where(ProCase.id == case_id))
+    result = await db.execute(
+        select(ProCase)
+        .options(selectinload(ProCase.evidence_entries))
+        .where(ProCase.id == case_id)
+    )
     case = result.scalar_one_or_none()
     if not case:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
+
+    if body.action == "publish":
+        grammar_report = _ensure_case_grammar_report(case)
+        decision = grammar_report.get("publish_decision") or {}
+        if not decision.get("allowed", True):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": "Publicación bloqueada por grammar gate.",
+                    "grammar": grammar_report,
+                },
+            )
+        if decision.get("confirm_required", False) and not body.grammar_confirmed:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Se requiere confirmación de gramática para publicar.",
+                    "grammar_confirm_required": True,
+                    "grammar": grammar_report,
+                },
+            )
 
     transitions: dict[str, dict[str, tuple[str, str]]] = {
         "approve":  {"review_pending": ("approved", "approved")},
@@ -996,9 +1061,79 @@ async def approve_case(
 
     _write_evidence(db, case, "approval_action", outcome=body.action.upper(),
                     payload={"action": body.action, "comment": body.comment, "reviewer": case.reviewer_name})
+    if body.action == "publish":
+        _write_evidence(
+            db,
+            case,
+            "grammar_publish_gate",
+            outcome="PERMIT",
+            agent="GrammarGate",
+            payload={
+                "report_status": ((case.export_result or {}).get("report_status")),
+                "grammar_confirmed": body.grammar_confirmed,
+            },
+        )
     await db.commit()
     await db.refresh(case)
     return _case_summary(case)
+
+
+@router.post("/cases/{case_id}/publish")
+async def publish_case(
+    case_id: str,
+    body: PublishIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Alias explícito para publicación final con grammar gate."""
+    return await approve_case(
+        case_id=case_id,
+        body=ApprovalIn(
+            action="publish",
+            comment=body.comment,
+            reviewer_name=body.reviewer_name,
+            reviewer_role=body.reviewer_role,
+            grammar_confirmed=body.grammar_confirmed,
+        ),
+        db=db,
+        current_user=current_user,
+    )
+
+
+@router.post("/grammar/lint")
+async def grammar_lint_endpoint(
+    body: GrammarLintIn,
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Gramática canónica ARHIAX (24 reglas) — compatible con API de Marcelo."""
+    if not body.text or not body.text.strip():
+        raise HTTPException(status_code=400, detail="El texto no puede estar vacío.")
+    if body.audience not in ("internal", "client", "technical", "executive"):
+        raise HTTPException(status_code=400, detail=f"Audiencia inválida: {body.audience}")
+    return lint_markdown(body.text, source=body.source, audience=body.audience)
+
+
+@router.get("/cases/{case_id}/grammar")
+async def get_case_grammar(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    result = await db.execute(
+        select(ProCase)
+        .options(selectinload(ProCase.evidence_entries))
+        .where(ProCase.id == case_id)
+    )
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    grammar_report = _ensure_case_grammar_report(case)
+    await db.commit()
+    return {
+        "case_id": case.case_id,
+        "report_status": grammar_report.get("report_status"),
+        "grammar": grammar_report,
+    }
 
 
 @router.post("/cases/{case_id}/generate-deliverables")
@@ -1024,6 +1159,16 @@ async def generate_deliverables(
 
     from api.pipeline.pro_markdown_builder import build_pro_markdown
     md = build_pro_markdown(case)
+    grammar_report = lint_markdown(md, source=f"pro_case:{case.case_id}", audience="executive")
+    decision = grammar_report.get("publish_decision") or {}
+    if not decision.get("allowed", True):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "No se pueden generar entregables finales: grammar gate bloqueado.",
+                "grammar": grammar_report,
+            },
+        )
 
     deliverables = [
         {"target": "markdown", "path": f"exports/{case.case_id}/diagnostico.md", "size_bytes": len(md.encode("utf-8")), "download_url": f"/pro/cases/{case.id}/download/markdown"},
@@ -1032,11 +1177,30 @@ async def generate_deliverables(
     ]
 
     case.deliverables = deliverables
-    case.render_result = {**(case.render_result or {}), "markdown": md}
+    case.render_result = {**(case.render_result or {}), "markdown": md, "grammar_report": grammar_report}
+    case.export_result = {**(case.export_result or {}), "report_status": grammar_report.get("report_status")}
+    _write_evidence(
+        db,
+        case,
+        "grammar_lint",
+        outcome="PERMIT",
+        agent="GrammarGate",
+        payload={
+            "critical": grammar_report.get("critical"),
+            "warnings": grammar_report.get("warnings"),
+            "report_status": grammar_report.get("report_status"),
+        },
+    )
     _write_evidence(db, case, "deliverables_generated", outcome="PERMIT")
     await db.commit()
 
-    return {"case_id": case_id, "deliverables": deliverables, "message": "Entregables generados."}
+    return {
+        "case_id": case_id,
+        "deliverables": deliverables,
+        "report_status": grammar_report.get("report_status"),
+        "grammar": grammar_report,
+        "message": "Entregables generados.",
+    }
 
 
 @router.get("/cases/{case_id}/download/{target}")

@@ -1,0 +1,285 @@
+DIAGNÓSTICO AGÉNTICO · SISTEMA ARHIA · SINERGIA CONSULTING
+GROUP
+Informe de Gestión Humana
+FYGP  S.A.S.
+RESPONDENTE
+Claudia Marcela Herrera
+CARGO
+Directora de Gestión Humana
+FECHA
+Marzo 2026
+CLASIFICACIÓN
+Confidencial
+PASIVO TOTAL
+ESTIMADO
+$762M
+COP  / año
+Acumulado 2026: $190.5M
+COP
+EMPLEADOS
+187
+ROTACIÓN
+ANUAL
+22%
+vs. 15%
+benchmark
+DEMANDAS
+ACTIVAS
+4
+MÓDULOS
+CRÍTICOS
+5
+MÓDULOS
+ALTO RIESGO
+2
+AGENTES
+RECOMENDADOS
+42
+01 — RESUMEN EJECUTIVO
+⚠ALERT A EJECUTIV A — Situación de Riesgo Crítico Múltiple
+El diagnóstico de FYGP  revela 7 subprocesos con fallas sistémicas simultáneas , 5 de los cuales están en
+categoría CRÍTICA  (IM < 25). El pasivo acumulado desde enero 2026 asciende a $190.5M COP  que la organización
+está perdiendo sin que aparezca en ninguna cuenta del sistema contable. La concentración de 4 demandas laborales
+activas, una notificación UGPP  de $73.2M COP  y un reintegro en curso por fuero de lactancia no detectado configuran
+una situación que requiere intervención en las próximas 5 semanas .
+Top 3 · Cuellos de Botella de Mayor Costo
+Subprocesos ordenados por producto de pasivo × urgencia
+Mapa de Madurez — 7 Subprocesos Evaluados
+Índice de Madurez (0–100) · Basado en 1 10 preguntas diagnósticas
+Jornada y Horas Extras 17 CRÍTICO
+Proceso Disciplinario 19 CRÍTICO
+Seguridad Social 22 CRÍTICO
+Clima y Engagement 24 CRÍTICO
+Recobro Incapacidades 28 CRÍTICO
+Pre-Selección y Selección 31 ALTO RIESGO🔴 CRÍTICO
+Proceso Disciplinario y
+Terminación
+Índice de Madurez: 19/100
+CONSERVADOR
+$168.2MOPTIMISTA
+$387.5M
+4 demandas activas. 3 por terminación
+con justa causa con expediente
+defectuoso. Pérdida en primera
+instancia en los 3 casos.1🔴 CRÍTICO
+Pre-Selección y Selección
+Índice de Madurez: 31/100
+CONSERVADOR
+$143.8MOPTIMISTA
+$312.4M
+Sin scorecard en 41 procesos del
+último año. 34% de contrataciones con
+salida antes de 12 meses. Costo:
+$218M COP  en 2025.2🟠 ALTO RIESGO
+Nómina y Prestaciones
+Sociales
+Índice de Madurez: 34/100
+CONSERVADOR
+$112.3MOPTIMISTA
+$219.6M
+Divisor 200h sin actualizar desde
+2022. Cruce PILA-DIAN inexistente.
+Notificación UGPP  $73.2M COP  sin
+respuesta formal.3
+---PAGE---
+Nómina y Prestaciones 34 ALTO RIESGO
+CRÍTICO (0–25) ALTO RIESGO (26–50) MODERADO (51–70) CONTROLADO (71+)
+Pasivo Cuantificado por Subproceso
+COP  millones · año · 187 empleados · salario promedio $3.2M COP
+SUBPROCESO IM ESTADO CONSERVADOR OPTIMISTA MEDIO FASE
+Recobro de
+Incapacidades28 CRÍTICO $87.4M $174.8M $131.1MFase
+1
+Nómina y Prestaciones 34ALTO
+RIESGO$112.3M $219.6M $165.9MFase
+1
+Seguridad Social
+Integral22 CRÍTICO $94.7M $188.1M $141.4MFase
+1
+Pre-Selección y
+Selección31ALTO
+RIESGO$143.8M $312.4M $228.1MFase
+1
+Proceso Disciplinario /
+Terminación19 CRÍTICO $168.2M $387.5M $277.8MFase
+1
+Clima y Engagement 24 CRÍTICO $58.3M $116.6M $87.4MFase
+2
+Jornada y Horas
+Extras17 CRÍTICO $97.6M $195.2M $146.4MFase
+1
+TOTAL ANUAL  ESTIMADO $762.3M $1,594.2M $1,178.1M
+📋 Nota del Consultor Senior — Sinergia Consulting Group
+El patrón de FYGP  reproduce con precisión la paradoja fundacional que el framework documenta en el 89% de las
+organizaciones colombianas de su tamaño: la organización ejecuta los artefactos — tiene nómina, hace encuesta de
+clima, aplica sanciones disciplinarias — pero omite los procesos que producen los resultados.  El pasivo de $762M
+COP  anuales no es el costo de la mala intención — es el costo de la falta de proceso. El ecosistema agéntico de 42 agentes
+propuesto está diseñado para atacar exactamente esa brecha: automatizar el proceso correcto, no el proceso existente.
+Cada mes de inacción acumula $63.5M COP  adicionales de pasivo.
+---PAGE---
+02 — DIAGNÓSTICO DETALLADO POR MÓDULO
+Hallazgos forenses anclados en las respuestas del Director de GH · FYGP  · Marzo 2026
+A.3
+Proceso Disciplinario y T erminación
+IM: 19/100  · Pasivo: $168.2M – $387.5M COP/año  · CRÍTICO
+🔍 HALLAZGOS FORENSES
+1.4 demandas activas — 3 por terminación con justa causa con expediente defectuoso. Pérdida en primera instancia
+en los 3 casos. Costo condenas 2025: $261M COP .
+2.Terminación de trabajadora en período de lactancia sin autorización del Inspector de Trabajo (2025) — reintegro en
+curso. Pasivo estimado: $90M+ COP .
+3.Liquidaciones finales calculadas sobre salario básico sin variables — omisión de la base correcta (SL4929-2023). 15
+liquidaciones incorrectas en 2025.
+4.RIT vigente de 2019 — anterior a Ley 2101/2021, Ley 2191/2022 y Ley 2350/2024. Instrumento disciplinario
+jurídicamente inválido.
+🤖 AGENTES RECOMENDADOS · FASE 1 · SEMANA 3–4
+Ag.25 Arquitecto Disciplinario Ag.26 V erificador Doble Instancia Ag.27 Calculador Liquidaciones
+Ag.28 Detector Fueros
+SP2.0
+Pre-Selección y Selección de Personal
+IM: 31/100  · Pasivo: $143.8M – $312.4M COP/año  · ALTO RIESGO
+🔍 HALLAZGOS FORENSES
+1.Sin scorecard en ninguno de los 41 procesos del último año. Decisiones unilaterales del líder . Validez predictiva del
+proceso actual: r=0.27.
+2.Time to fill promedio: 61 días vs. benchmark Colombia cuartil superior: 28 días. Costo por semana adicional: $3.2M
+COP  en productividad no generada.
+3.14 de 41 contrataciones (34%) resultaron en salida o desempeño insuficiente antes de los 12 meses. Costo
+estimado 2025: $218M COP .
+🤖 AGENTES RECOMENDADOS · FASE 1–2
+Ag.08 Arquitecto Scorecard Ag.09 Filtro CVs Ag.10 Entrevistador Estructurado Ag.1 1 Calibración Panel
+Ag.12 QoH
+A.2
+Nómina y Prestaciones Sociales
+IM: 34/100  · Pasivo: $112.3M – $219.6M COP/año  · ALTO RIESGO
+🔍 HALLAZGOS FORENSES
+---PAGE---
+1.Sistema de nómina usando divisor 200h — no actualizado a 191.33h (Ley 2101/2021). Pasivo acumulándose desde
+julio 2022: 3.5 años de subcálculo.
+2.Cruce PILA-DIAN inexistente. Notificación UGPP: $73.2M COP . Sin protocolo de respuesta formal. Plazo de 30 días
+hábiles vencido.
+3.Recargo nocturno desde las 9PM — Ley 2350/2024 lo movió a las 7PM desde julio 2024. 20 meses de pasivo
+acumulado sin corrección.
+🤖 AGENTES RECOMENDADOS · FASE 1 · SEMANA 1–3
+Ag.04 Guardián Novedades Ag.05 Bases Legales Ag.06 Centinela DIAN-UGPP
+Ag.07 Calendario Prestaciones
+A.5
+Seguridad Social Integral
+IM: 22/100  · Pasivo: $94.7M – $188.1M COP/año  · CRÍTICO
+🔍 HALLAZGOS FORENSES
+1.Afiliación no verificada en ADRES antes del primer día — 3 accidentes en primeros 30 días en 2025 con ARL en
+trámite pero no activa. Responsabilidad directa del empleador .
+2.Umbral Colpensiones (2.3 SMLMV — Ley 2381/2024) sin verificación período a período. 94 trabajadores en zona
+limítrofe sin revisión desde enero 2025.
+3.Notificación UGPP  octubre 2025: $73.2M COP . 30 días hábiles para responder vencidos sin contestación formal
+documentada.
+🤖 AGENTES RECOMENDADOS · FASE 1 · SEMANA 1–2
+Ag.13 V erificador ADRES Ag.14 Monitor Umbral Colpensiones Ag.15 Codificador PILA Ag.16 Auditor UGPP
+A.9
+Clima Organizacional y Engagement
+IM: 24/100  · Pasivo: $58.3M – $1 16.6M COP/año  · CRÍTICO
+🔍 HALLAZGOS FORENSES
+1.Encuesta anual genérica (instrumento 2018, no validado). Promedio global 71/100 sin desglose por equipo. Equipo
+de logística con eNPS -8 — desconocido por la dirección.
+2.Último plan de acción post-encuesta: 2023. 0 de 7 iniciativas implementadas con seguimiento formal. Tasa de
+implementación: 0% vs. 61% con proceso correcto.
+3.Rotación equipo logística: 41% en 2025 vs. 22% promedio organizacional. Causa raíz nunca identificada — no
+conectada con score de clima.
+🤖 AGENTES RECOMENDADOS · FASE 2 · MES 3–4
+Ag.17 Diseñador Instrumento Ag.18 Analizador por Equipos Ag.19 Pulse Quincenal
+Ag.20 T racker Plan Acción
+---PAGE---
+03 — ROADMAP DE IMPLEMENTACIÓN · 42 AGENTES · 3 FASES
+Secuencia personalizada para FYGP  según Score de Prioridad · 187 empleados · Salario promedio $3.2M COP
+Fase 1Activa tu Negocio
+5 semanas · 13 agentes · Impacto visible desde el día 5
+📅 Semana 1 — Escudo de Cumplimiento
+Cero trabajadores sin cobertura el día 1 · Ninguna acción de personal sin verificación de fuero
+Ag.21 Asistente Normativo Ag.07 Calendario Prestaciones Ag.28 Detector Fueros Ag.13 V erificador ADRES
+Ag.01 Centinela Incapacidades
+📅 Semana 2 — Control de Nómina y SS
+AFP correcta 94 trabajadores · Divisor 191.33h · Reliquidaciones del 9.4% al 2%
+Ag.14 Monitor Umbral Colpensiones Ag.04 Guardián Novedades Ag.05 Bases Legales Ag.39 Monitor Jornada
+Ag.37 Cuota SENA
+📅 Semana 3 — Cruce Externo y Riesgo Legal
+Cruce PILA-DIAN previo a transmisión · Proceso disciplinario jurídicamente válido
+Ag.06 Centinela DIAN-UGPP Ag.15 Codificador PILA Ag.02 Radar Plazos Ag.25 Arquitecto Disciplinario
+Ag.26 V erificador Doble Instancia
+📅 Semana 4 — Liquidaciones y Selección
+Primera liquidación con base SL4929-2023 · Primera vacante con scorecard real
+Ag.27 Calculador Liquidaciones Ag.03 Liquidador Subsidios Ag.33 Monitor Fuero Discapacidad
+Ag.08 Arquitecto Scorecard
+📅 Semana 5 — Calibración y Presentación a la Dirección
+Dashboard ROI semanas 1–4 · Argumento de aprobación Fase 2
+Calibración E2E del ecosistema Medición impacto real vs. proyectado Presentación Junta Directiva
+Fase 2Continuación
+Meses 2–6 · 22 agentes adicionales · ROI acumulado 6.1x
+📅 Mes 2 — Proceso y Expedientes
+Detección UGPP  interna · T ime to fill 61→30 días · Offboarding sin brechas
+Ag.16 Auditor UGPP Ag.24 Expedientes Ag.09 Filtro CVs Ag.29 Corresponsabilidad EST Ag.35 Offboarding
+📅 Mes 3 — Clima e Instrumento V alidado
+Primera encuesta clima validada · Scorecard por equipo · RIT actualizado
+Ag.10 Entrevistador Ag.17 Diseñador Clima Ag.18 Analizador Equipos Ag.31 Auditor RIT Ag.34 Beneficios T ributarios
+📅 Mes 4–6 — Inteligencia y Always-On
+Deterioro clima en 2 semanas vs. 12 meses · Plan acción 0%→61%
+Ag.1 1 Calibración Panel Ag.12 QoH Ag.19 Pulse Quincenal Ag.20 T racker Plan Ag.36 Causas Salida
+---PAGE---
+Fase 3Consolidación
+Meses 7–12 · 7 agentes adicionales · ROI acumulado 22.7x
+📅 Mes 6–9 — People Analytics y Predicción
+GH con argumento en COP  ante dirección · Rotación evitable detectada antes de que ocurra
+Ag.22 Dashboard Ejecutivo CEO Ag.23 Predictor de Rotación
+📅 Mes 9–12 — Ecosistema Completo
+42 agentes activos · Correlación clima-KPIs documentada · ROI compuesto auditado
+Agentes A.4 EST Agentes A.6 RIT Agentes A.7 Discapacidad Agentes A.10–A.12
+---PAGE---
+04 — ROI PROYECTADO DEL PROGRAMA ARHIA
+Impacto económico por fase · FYGP  S.A.S. · 187 empleados · Salario promedio $3.2M COP
+FASE 1 · 5 SEMANAS
+13 agentes activos
+INVERSIÓN
+$28M
+COPIMPACTO
+MÍN.
+$187M
+– $412M COP
+ROI FASE 1
+6.7x – 14.7x
+Por cada $1 COP  invertidoFASE 2 · 6 MESES
+22 agentes adicionales
+INVERSIÓN
+$54M
+COPIMPACTO
+ADIC.
+$320M
+– $680M COP
+ROI FASE 2
+5.9x – 12.6x
+Por cada $1 COP  invertidoFASE 3 · 12 MESES
+7 agentes adicionales
+INVERSIÓN
+$38M
+COPIMPACTO
+ADIC.
+$210M
+– $480M COP
+ROI FASE 3
+5.5x – 12.6x
+Por cada $1 COP  invertido
+ARGUMENTO DE INVERSIÓN · PARA LA JUNTA DIRECTIVA DE FYGP
+FYGP  tiene hoy un pasivo documentado de $762M COP  anuales . El
+programa de 42 agentes cuesta $120M COP  en el año 1  y produce
+un impacto mínimo conservador de $717M COP  en el mismo
+período.
+Costo del programa Año 1
+$120M COP
+Impacto conservador Año 1
+$717M COP
+ROI Año 1 conservador
+5.97x
+Cada mes que FYGP  no implementa el programa acumula $63.5M COP  adicionales de pasivo.  El costo de
+esperar 2 meses más equivale a financiar el 106% de la inversión total de la Fase 1 sin recibir ninguno de sus
+beneficios. El pasivo acumulado desde enero 2026 ya asciende a $190.5M COP  — más que el costo total del
+programa completo de un año.
+Sinergia Consulting Group  · Sistema ARHIA  · Diagnóstico Agéntico de
+Gestión Humana · ConfidencialFYGP  S.A.S. · Marzo 2026 · Framework 29 subprocesos · 1 10
+preguntas · 42 agentes
+---PAGE---
