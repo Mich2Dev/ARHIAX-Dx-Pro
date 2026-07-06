@@ -18,6 +18,23 @@ const navItems = [
   { href: "/dashboard-pro/compliance", icon: ShieldCheck,     label: "Compliance" },
 ];
 
+/* Paleta rail — contraste explícito entre zonas */
+const C = {
+  rail: "#1a1b19",
+  railHeader: "#222420",
+  railFooter: "#1e201c",
+  border: "rgba(244, 241, 234, 0.14)",
+  borderSoft: "rgba(244, 241, 234, 0.08)",
+  textPrimary: "#f4f1ea",
+  textSecondary: "rgba(244, 241, 234, 0.72)",
+  textMuted: "rgba(244, 241, 234, 0.48)",
+  textLabel: "rgba(155, 109, 77, 0.95)",
+  accent: "#78815d",
+  accentBright: "#9b6d4d",
+  navActiveBg: "rgba(120, 129, 93, 0.22)",
+  navHoverBg: "rgba(244, 241, 234, 0.06)",
+};
+
 export default function DashboardProLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user } = useAuth();
@@ -40,99 +57,152 @@ export default function DashboardProLayout({ children }: { children: React.React
       <div style={{
         minHeight: "100vh",
         display: "grid",
-        gridTemplateColumns: "240px minmax(0,1fr)",
-        background: "#0e0f0e",
+        gridTemplateColumns: "248px minmax(0, 1fr)",
+        background: "#f4f1ea",
       }}>
 
-        {/* ── Rail oscuro ── */}
         <aside style={{
           position: "sticky", top: 0, height: "100vh",
           display: "flex", flexDirection: "column",
-          borderRight: "1px solid rgba(244,241,234,0.08)",
-          background: "#111311",
+          borderRight: `1px solid ${C.border}`,
+          background: C.rail,
+          boxShadow: "4px 0 24px rgba(23, 23, 23, 0.06)",
           overflow: "hidden",
         }}>
-          {/* Brand */}
-          <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid rgba(244,241,234,0.06)" }}>
+          {/* Brand — zona más clara */}
+          <div style={{
+            padding: "22px 18px 18px",
+            background: C.railHeader,
+            borderBottom: `1px solid ${C.border}`,
+          }}>
             <Link href="/dashboard-pro" style={{ display: "flex", gap: "12px", alignItems: "center", textDecoration: "none" }}>
               <div style={{
-                width: "36px", height: "36px",
-                background: "linear-gradient(135deg, #56624b, #9b6d4d)",
+                width: "38px", height: "38px",
+                background: "linear-gradient(145deg, #78815d, #9b6d4d)",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#f4f1ea", fontFamily: "IBM Plex Mono, monospace",
+                color: C.textPrimary, fontFamily: "IBM Plex Mono, monospace",
                 fontSize: "13px", fontWeight: 500, letterSpacing: "0.02em",
-              }}>Pro</div>
+              }}>Dx</div>
               <div>
-                <p style={{ margin: 0, fontSize: "11px", fontFamily: "IBM Plex Mono, monospace", color: "rgba(244,241,234,0.9)", fontWeight: 500, letterSpacing: "0.08em" }}>ARHIAX</p>
-                <p style={{ margin: "2px 0 0", fontSize: "10px", fontFamily: "IBM Plex Mono, monospace", color: "#56624b", letterSpacing: "0.04em" }}>DxPro · PMEL/ATK</p>
+                <p style={{
+                  margin: 0, fontSize: "11px", fontFamily: "IBM Plex Mono, monospace",
+                  color: C.textPrimary, fontWeight: 500, letterSpacing: "0.1em",
+                }}>ARHIAX</p>
+                <p style={{
+                  margin: "3px 0 0", fontSize: "10px", fontFamily: "IBM Plex Mono, monospace",
+                  color: C.textSecondary, letterSpacing: "0.04em",
+                }}>Diagnósticos</p>
               </div>
             </Link>
           </div>
 
           {/* Nav */}
-          <nav style={{ flex: 1, padding: "12px 12px", display: "flex", flexDirection: "column", gap: "2px" }}>
+          <nav style={{ flex: 1, padding: "16px 12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+            <p style={{
+              margin: "0 0 8px 10px",
+              fontSize: "9px",
+              fontFamily: "IBM Plex Mono, monospace",
+              color: C.textLabel,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+            }}>
+              Menú
+            </p>
             {navItems.map(({ href, icon: Icon, label }) => {
               const active = pathname === href || (href !== "/dashboard-pro" && pathname.startsWith(href));
               return (
-                <Link key={href} href={href} style={{
-                  display: "flex", alignItems: "center", gap: "10px",
-                  minHeight: "38px", padding: "0 10px",
-                  fontSize: "12px", fontFamily: "IBM Plex Mono, monospace",
-                  textDecoration: "none",
-                  color: active ? "#f4f1ea" : "rgba(244,241,234,0.4)",
-                  background: active ? "rgba(86,98,75,0.25)" : "transparent",
-                  borderLeft: active ? "2px solid #56624b" : "2px solid transparent",
-                  fontWeight: active ? 500 : 400,
-                  transition: "all 0.15s",
-                }}>
-                  <Icon size={13} />
+                <Link
+                  key={href}
+                  href={href}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "10px",
+                    minHeight: "40px", padding: "0 12px",
+                    borderRadius: "4px",
+                    fontSize: "12px", fontFamily: "IBM Plex Mono, monospace",
+                    textDecoration: "none",
+                    color: active ? C.textPrimary : C.textSecondary,
+                    background: active ? C.navActiveBg : "transparent",
+                    borderLeft: active ? `3px solid ${C.accentBright}` : "3px solid transparent",
+                    fontWeight: active ? 500 : 400,
+                    transition: "background 0.15s, color 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.background = C.navHoverBg;
+                      e.currentTarget.style.color = C.textPrimary;
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.color = C.textSecondary;
+                    }
+                  }}
+                >
+                  <Icon size={14} strokeWidth={active ? 2.25 : 1.75} color={active ? C.accent : C.textMuted} />
                   {label}
                 </Link>
               );
             })}
           </nav>
 
-          {/* Switcher de sistema */}
-          <div style={{ padding: "12px", borderTop: "1px solid rgba(244,241,234,0.06)" }}>
-            <Link href="/dashboard" style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "8px 10px", fontSize: "11px",
+          {/* Usuario — tarjeta separada del nav */}
+          <div style={{
+            margin: "12px",
+            padding: "14px",
+            background: C.railFooter,
+            border: `1px solid ${C.border}`,
+            borderRadius: "6px",
+          }}>
+            <p style={{
+              margin: 0, fontSize: "10px", fontFamily: "IBM Plex Mono, monospace",
+              color: C.textMuted, letterSpacing: "0.08em", textTransform: "uppercase",
+            }}>
+              Sesión
+            </p>
+            <p style={{
+              margin: "6px 0 0", fontSize: "12px", color: C.textPrimary,
+              fontFamily: "IBM Plex Mono, monospace", fontWeight: 500,
+            }}>
+              {user?.name}
+            </p>
+            <p style={{
+              margin: "2px 0 12px", fontSize: "10px", color: C.accent,
               fontFamily: "IBM Plex Mono, monospace",
-              color: "rgba(244,241,234,0.3)", textDecoration: "none",
-              border: "1px solid rgba(244,241,234,0.07)",
-              transition: "all 0.15s",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = "rgba(244,241,234,0.6)"; e.currentTarget.style.borderColor = "rgba(244,241,234,0.15)"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "rgba(244,241,234,0.3)"; e.currentTarget.style.borderColor = "rgba(244,241,234,0.07)"; }}
-            >
-              <span>Dx Standard</span>
-              <span style={{ fontSize: "10px", opacity: 0.5 }}>→</span>
-            </Link>
-          </div>
-
-          {/* Footer usuario */}
-          <div style={{ padding: "16px 20px", borderTop: "1px solid rgba(244,241,234,0.06)" }}>
-            <p style={{ margin: 0, fontSize: "11px", color: "rgba(244,241,234,0.5)", fontFamily: "IBM Plex Mono, monospace" }}>{user?.name}</p>
-            <p style={{ margin: "3px 0 8px", fontSize: "10px", color: "#56624b", fontFamily: "IBM Plex Mono, monospace" }}>operador técnico</p>
+            }}>
+              {user?.role ?? "consultor"}
+            </p>
             <button
               onClick={() => { localStorage.removeItem("token"); window.location.href = "/login"; }}
               style={{
-                width: "100%", padding: "7px 10px", fontSize: "10px",
+                width: "100%", padding: "8px 10px", fontSize: "10px",
                 fontFamily: "IBM Plex Mono, monospace",
-                background: "transparent", border: "1px solid rgba(244,241,234,0.1)",
-                color: "rgba(244,241,234,0.3)", cursor: "pointer",
+                background: "rgba(244, 241, 234, 0.04)",
+                border: `1px solid ${C.border}`,
+                color: C.textSecondary,
+                cursor: "pointer",
+                borderRadius: "4px",
                 transition: "all 0.15s",
               }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,58,58,0.5)"; e.currentTarget.style.color = "#f4a0a0"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(244,241,234,0.1)"; e.currentTarget.style.color = "rgba(244,241,234,0.3)"; }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = "rgba(155, 109, 77, 0.55)";
+                e.currentTarget.style.color = C.textPrimary;
+                e.currentTarget.style.background = "rgba(155, 109, 77, 0.12)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = C.border;
+                e.currentTarget.style.color = C.textSecondary;
+                e.currentTarget.style.background = "rgba(244, 241, 234, 0.04)";
+              }}
             >
               Cerrar sesión
             </button>
           </div>
         </aside>
 
-        {/* ── Workspace ── */}
-        <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh",
+        <div style={{
+          display: "flex", flexDirection: "column", minHeight: "100vh",
           background: `
             linear-gradient(90deg, rgba(23,23,23,0.04) 1px, transparent 1px),
             linear-gradient(rgba(23,23,23,0.035) 1px, transparent 1px),
@@ -140,42 +210,40 @@ export default function DashboardProLayout({ children }: { children: React.React
           `,
           backgroundSize: "72px 72px",
         }}>
-          {/* Topbar */}
           <div style={{
             height: "48px", display: "flex", alignItems: "center",
             padding: "0 32px", gap: "8px",
-            borderBottom: "1px solid rgba(23,23,23,0.1)",
-            background: "rgba(244,241,234,0.92)",
+            borderBottom: "1px solid rgba(23,23,23,0.12)",
+            background: "rgba(244,241,234,0.95)",
             backdropFilter: "blur(12px)",
             position: "sticky", top: 0, zIndex: 10,
             justifyContent: "space-between",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <Link href="/dashboard-pro" style={{ fontSize: "11px", fontFamily: "IBM Plex Mono, monospace", color: "#706f69", textDecoration: "none" }}>
-                DxPro
+                ARHIAX Dx
               </Link>
               {breadcrumb && (
                 <>
-                  <span style={{ color: "rgba(23,23,23,0.2)", fontSize: "11px" }}>›</span>
+                  <span style={{ color: "rgba(23,23,23,0.25)", fontSize: "11px" }}>›</span>
                   <span style={{ fontSize: "11px", fontFamily: "IBM Plex Mono, monospace", color: "#171717", fontWeight: 500 }}>
                     {breadcrumb}
                   </span>
                 </>
               )}
             </div>
-            {/* Badge de sistema */}
             <span style={{
               fontSize: "9px", fontFamily: "IBM Plex Mono, monospace",
               color: "#56624b", letterSpacing: "0.08em",
-              padding: "3px 8px",
-              border: "1px solid rgba(86,98,75,0.25)",
-              background: "rgba(86,98,75,0.06)",
+              padding: "4px 10px",
+              border: "1px solid rgba(86,98,75,0.3)",
+              background: "rgba(86,98,75,0.08)",
+              borderRadius: "3px",
             }}>
-              PMEL/ATK · v1
+              Gobernanza PMEL/ATK
             </span>
           </div>
 
-          {/* Content */}
           <main style={{ flex: 1, padding: "32px clamp(20px,4vw,64px) 64px", fontFamily: "Manrope, sans-serif" }}>
             {children}
           </main>

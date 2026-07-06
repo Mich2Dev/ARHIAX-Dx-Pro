@@ -5,8 +5,14 @@ import { Providers } from "@/components/providers/Providers";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
-  title: "ARHIAX Dx — Governed Diagnostics",
-  description: "Governed organizational diagnostics platform",
+  title: "ARHIAX Dx",
+  description: "Plataforma de diagnósticos organizacionales gobernados",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default async function RootLayout({

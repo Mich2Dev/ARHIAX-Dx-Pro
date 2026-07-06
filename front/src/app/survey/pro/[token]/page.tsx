@@ -10,7 +10,7 @@ export default function ProSurveyPage() {
 
   return (
     <div className="min-h-screen bg-[#f4f1ea]">
-      <SurveyForm token={token} />
+      <SurveyForm token={token} variant="pro" />
     </div>
   );
 }

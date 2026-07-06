@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { apiPro } from "@/lib/api-pro";
 import { Spinner } from "@/components/ui/Spinner";
 import { CheckCircle, ShieldCheck, Cpu, Loader2, Check, ChevronRight } from "lucide-react";
 
@@ -12,6 +13,9 @@ interface Question {
   text: string;
   type: "likert_5" | "open_text" | "multiple_choice";
   roles: string[];
+  rationale?: string;
+  hypothesis_tested?: string;
+  expected_direction?: string;
 }
 
 // ── Robust question parser ────────────────────────────────────────────────────
@@ -49,6 +53,9 @@ function parseQuestions(questionsData: any): Question[] {
     text: q.text ?? q.texto ?? q.question ?? q.pregunta ?? `Pregunta ${i + 1}`,
     type: normalizeType(q.type ?? q.tipo ?? q.escala ?? "likert_5"),
     roles: normalizeRoles(q.roles ?? q.rol_target ?? q.role ?? "all"),
+    rationale: q.rationale ?? q.razon ?? undefined,
+    hypothesis_tested: q.hypothesis_tested ?? q.hipotesis ?? undefined,
+    expected_direction: q.expected_direction ?? undefined,
   }));
 }
 
@@ -94,7 +101,9 @@ function getQuestionsForRole(questions: Question[], branching: any, role: string
   return filtered.length > 0 ? filtered : questions;
 }
 
-export function SurveyForm({ token }: { token: string }) {
+export function SurveyForm({ token, variant = "standard" }: { token: string; variant?: "standard" | "pro" }) {
+  const client = variant === "pro" ? apiPro : api;
+  const surveyBase = variant === "pro" ? "/pro/survey" : "/survey";
   const [step, setStep] = useState<"role" | "questions" | "completed">("role");
   const [role, setRole] = useState<string>("");
   const [currentQ, setCurrentQ] = useState(0);
@@ -103,7 +112,7 @@ export function SurveyForm({ token }: { token: string }) {
 
   const { data: survey, isLoading, error } = useQuery({
     queryKey: ["survey", token],
-    queryFn: () => api.get(`/survey/${token}`).then((r) => r.data),
+    queryFn: () => client.get(`${surveyBase}/${token}`).then((r) => r.data),
     retry: false,
   });
 
@@ -123,7 +132,7 @@ export function SurveyForm({ token }: { token: string }) {
 
   const submitMutation = useMutation({
     mutationFn: (payload: any) =>
-      api.post(`/survey/${token}/submit`, payload).then((r) => r.data),
+      client.post(`${surveyBase}/${token}/submit`, payload).then((r) => r.data),
     onSuccess: () => { setSubmitError(null); setStep("completed"); },
     onError: (err: any) => {
       const detail = err?.response?.data?.detail ?? err?.message ?? "Error al enviar. Intenta de nuevo.";
@@ -321,6 +330,20 @@ export function SurveyForm({ token }: { token: string }) {
 
           <div className="bg-white border border-[#171717]/12 p-12 shadow-sm mb-6 min-h-[400px] flex flex-col">
             <div className="flex-1">
+              {(currentQuestion.hypothesis_tested || currentQuestion.rationale) && (
+                <div className="mb-6 p-4 bg-[#f4f1ea]/80 border border-[#171717]/8">
+                  {currentQuestion.hypothesis_tested && (
+                    <p className="text-[10px] font-mono text-[#56624b] uppercase tracking-wider mb-1" style={{ fontFamily: "IBM Plex Mono, monospace" }}>
+                      Hipótesis: {currentQuestion.hypothesis_tested}
+                    </p>
+                  )}
+                  {currentQuestion.rationale && (
+                    <p className="text-[12px] text-[#706f69] leading-relaxed m-0" style={{ fontFamily: "Manrope, sans-serif" }}>
+                      {currentQuestion.rationale}
+                    </p>
+                  )}
+                </div>
+              )}
               <h2 className="text-3xl font-medium text-[#171717] leading-tight mb-12" style={{ fontFamily: "Cormorant Garamond, serif" }}>
                 {currentQuestion.text}
               </h2>

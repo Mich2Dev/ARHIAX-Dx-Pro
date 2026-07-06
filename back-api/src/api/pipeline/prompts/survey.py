@@ -45,6 +45,9 @@ CONTEXTO ESTRATÉGICO:
 HIPÓTESIS Y SEÑALES (G05):
 {g05_brechas}
 
+INCIDENTES VIVIDOS (anclaje obligatorio — úsalos para redactar ítems situacionales):
+{corpus_incidentes}
+
 CONFIGURACIÓN DE ROLES (G02):
 {g02_configurador}
 

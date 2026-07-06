@@ -3,6 +3,7 @@
 import { Loader2, Check } from "lucide-react";
 import type { ProClientData } from "./ProStep1Client";
 import type { ProScopeData } from "./ProStep2Scope";
+import { isHypothesisComplete } from "./hypothesisPack";
 
 export interface ProConsentData {
   t1: boolean;
@@ -81,8 +82,8 @@ export function ProStep3Review({
       <Card title="ALCANCE PRO">
         <Row label="Roles"       value={scope.roles.join(", ")} />
         <Row label="Dimensiones" value={scope.dimensions.join(", ")} />
-        {scope.hypotheses.filter(h => h.trim()).length > 0 && (
-          <Row label="Hipótesis" value={`${scope.hypotheses.filter(h => h.trim()).length} definidas`} />
+        {scope.hypothesis_pack.filter(isHypothesisComplete).length > 0 && (
+          <Row label="Hipótesis DDF" value={`${scope.hypothesis_pack.filter(isHypothesisComplete).length} con incidente anclado`} />
         )}
         {scope.grey_sources.filter(g => g.trim()).length > 0 && (
           <Row label="Fuentes" value={`${scope.grey_sources.filter(g => g.trim()).length} fuentes`} />

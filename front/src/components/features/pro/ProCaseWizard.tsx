@@ -10,6 +10,7 @@ import { ProStep2Scope, defaultScope } from "./wizard/ProStep2Scope";
 import { ProStep3Review, defaultConsent } from "./wizard/ProStep3Review";
 import type { ProClientData } from "./wizard/ProStep1Client";
 import type { ProScopeData } from "./wizard/ProStep2Scope";
+import { buildHypothesisPayload, emptyHypothesis } from "./wizard/hypothesisPack";
 import type { ProConsentData } from "./wizard/ProStep3Review";
 
 const DRAFT_KEY = "dxpro_wizard_draft";
@@ -18,7 +19,19 @@ function loadDraft(): { client: ProClientData; scope: ProScopeData; step: number
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.scope?.hypotheses && !parsed.scope.hypothesis_pack) {
+      parsed.scope = {
+        ...defaultScope,
+        ...parsed.scope,
+        hypothesis_pack: (parsed.scope.hypotheses as string[])
+          .filter((h: string) => h?.trim())
+          .map((h: string, i: number) => ({ ...emptyHypothesis(i), enunciado: h })),
+      };
+      delete parsed.scope.hypotheses;
+    }
+    return parsed;
   } catch { return null; }
 }
 
@@ -127,6 +140,7 @@ export function ProCaseWizard() {
 
   function handleSubmit() {
     const engId = client.engagement_id.trim() || `eng-${Date.now()}`;
+    const { paquete_hipotesis, hypotheses } = buildHypothesisPayload(scope.hypothesis_pack);
     mutation.mutate({
       consent: { action: "ingest_to_llm", consents: { T1: consent.t1, T3: consent.t3 } },
       engagement_id: engId,
@@ -134,9 +148,9 @@ export function ProCaseWizard() {
       domain: client.domain,
       roles: scope.roles,
       dimensions: scope.dimensions,
-      hypotheses: scope.hypotheses.filter(h => h.trim()),
+      hypotheses,
+      paquete_hipotesis,
       grey_sources: scope.grey_sources.filter(g => g.trim()),
-      // Contexto extra para el reporte
       extra: {
         legal_name:       client.legal_name,
         nit:              client.nit,

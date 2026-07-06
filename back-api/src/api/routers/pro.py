@@ -32,6 +32,7 @@ from api.auth import get_current_user
 from api.db import get_db, get_async_session_local
 from api.models import User
 from api.models.pro import ProCase, ProEvidence, ProSurveySession, ProSurveyResponse
+from api.pipeline.hypothesis_pack import build_hypothesis_pack, g05_from_paquete
 from api.services.grammar_gate import lint_markdown
 
 router = APIRouter(prefix="/pro", tags=["pro"])
@@ -40,6 +41,16 @@ DXPRO_URL = os.getenv("DXPRO_URL", "http://localhost:8310")
 DXPRO_API_KEY = os.getenv("DXPRO_API_KEY", "")
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
+
+class HypothesisPackIn(BaseModel):
+    hipotesis_id: str | None = None
+    enunciado: str
+    confianza: str = "MEDIA"
+    observacion_refutadora: str = ""
+    incidente_texto: str = ""
+    informante_id: str = "INF-01"
+    dato_duro: str = "ALTO"
+
 
 class CreateCaseIn(BaseModel):
     model_config = {"extra": "allow"}
@@ -50,6 +61,7 @@ class CreateCaseIn(BaseModel):
     roles: list[str] = ["executive", "operations", "technology"]
     dimensions: list[str] = ["strategy", "process", "technology"]
     hypotheses: list[str] = []
+    paquete_hipotesis: list[HypothesisPackIn] | None = None
     grey_sources: list[str] = []
     extra: dict | None = None
 
@@ -686,6 +698,12 @@ async def create_case(
     engagement_id = body.engagement_id or f"eng-{uuid.uuid4().hex[:8]}"
     trace = _trace_id()
 
+    raw_pack = [h.model_dump() for h in (body.paquete_hipotesis or [])]
+    paquete, field_data = build_hypothesis_pack(
+        raw_pack,
+        legacy_strings=[h for h in body.hypotheses if str(h).strip()],
+    )
+
     case = ProCase(
         id=_new_id(),
         case_id=_case_id(),
@@ -699,8 +717,12 @@ async def create_case(
         consent=body.consent,
         input_payload={
             "roles": body.roles, "dimensions": body.dimensions,
-            "hypotheses": body.hypotheses, "grey_sources": body.grey_sources,
+            "hypotheses": body.hypotheses,
+            "paquete_hipotesis": paquete,
+            "field_data": field_data,
+            "grey_sources": body.grey_sources,
             "domain": body.domain, "client_name": body.client_name,
+            "flow": "ddf_intake" if paquete else "pro_legacy",
             **(body.extra or {}),
         },
     )
@@ -729,7 +751,10 @@ async def create_case(
     await db.commit()
     
     # 3. Lanzar la generación en segundo plano (Ahora que el caso ya existe físicamente en el DB)
-    background_tasks.add_task(_generate_survey_background, case.id, survey.id, body.model_dump())
+    survey_payload = body.model_dump()
+    survey_payload["paquete_hipotesis"] = paquete
+    survey_payload["field_data"] = field_data
+    background_tasks.add_task(_generate_survey_background, case.id, survey.id, survey_payload)
 
     # Recuperar el caso con todas sus relaciones cargadas para la respuesta
     result = await db.execute(
@@ -787,22 +812,35 @@ async def _generate_survey_background(case_id: str, survey_id: str, body_dict: d
                 executor = PipelineExecutor(api_settings)
 
                 # Construir contexto para los agentes
+                paquete = body_dict.get("paquete_hipotesis") or []
+                field_data = body_dict.get("field_data") or {}
+                if not paquete and body_dict.get("hypotheses"):
+                    paquete, field_data = build_hypothesis_pack(
+                        [],
+                        legacy_strings=[h for h in body_dict.get("hypotheses", []) if str(h).strip()],
+                    )
+                symptom = (body_dict.get("extra") or {}).get("symptom", "")
+                if not symptom and paquete:
+                    symptom = str(paquete[0].get("enunciado") or "")
+
                 context = {
                     "organization_name": body_dict.get("client_name", ""),
                     "domain": body_dict.get("domain", ""),
                     "subprocess": body_dict.get("domain", ""),
-                    "objective": (body_dict.get("extra") or {}).get("symptom", ""),
+                    "objective": symptom,
                     "size_org": str((body_dict.get("extra") or {}).get("size_org", "51-200")),
                     "g02_configurador": {
                         "roles": [{"id": r, "label": r} for r in body_dict.get("roles", [])],
                         "dimensions": [{"id": d, "name": d} for d in body_dict.get("dimensions", [])]
                     },
-                    "g05_brechas": {
-                        "hypotheses": [{"id": f"H{i+1:02d}", "hypothesis": h}
-                                       for i, h in enumerate(body_dict.get("hypotheses", []))
-                                       if str(h).strip()],
-                        "gaps": []
-                    },
+                    "g05_brechas": g05_from_paquete(paquete, field_data),
+                    "paquete_hipotesis": paquete,
+                    "corpus_incidentes": [
+                        inc.get("texto")
+                        for fd in field_data.values()
+                        for inc in (fd.get("corpus_incidentes") or [])
+                        if isinstance(inc, dict) and inc.get("texto")
+                    ],
                 }
                 # ── G09a: Diseño de preguntas ──────────────────────────────────────
                 _log.info("G09a starting for case %s", case_id)
@@ -1276,6 +1314,7 @@ async def get_pro_survey(token: str, db: AsyncSession = Depends(get_db)) -> dict
         "roles": questions.get("roles", []),
         "dimensions": questions.get("dimensions", []),
         "questions": questions.get("questions", []),
+        "branching": session.branching or {},
         "scale": questions.get("scale", {}),
         "responses_count": session.responses_count,
         "min_responses": session.min_responses,
