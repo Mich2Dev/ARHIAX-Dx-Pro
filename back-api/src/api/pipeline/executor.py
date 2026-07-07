@@ -146,9 +146,17 @@ class PipelineExecutor:
             "g09a_preguntas":   {"questions": [{"id": "Q1", "text": "Pregunta mock", "roles": ["Estratégico", "Táctico", "Operativo"], "type": "likert_5", "dimension": "DIM-01"}]},
             "g09b_ramificacion":{"role_tracks": {"Estratégico": {"question_ids": ["Q1"], "estimated_minutes": 10}, "Táctico": {"question_ids": ["Q1"], "estimated_minutes": 12}, "Operativo": {"question_ids": ["Q1"], "estimated_minutes": 8}}, "branching_rules": []},
             "g09c_validacion":  {"irr_alpha_estimated": 0.78, "irr_status": "APROBADO", "instrument_quality": "ALTA"},
-            "g10a_scoring":     {"scoring_summary": {"overall_score": 62, "overall_percentile": 35, "benchmark_score": 78}, "dimension_scores": [], "role_scores": {"Estratégico": {"score": 71}, "Táctico": {"score": 63}, "Operativo": {"score": 52}}, "delta_sigma": {"max_gap": 2.3, "gap_pairs": []}},
+            "g10a_scoring":     {"scoring_summary": {"overall_score": 62, "overall_percentile": 35, "benchmark_score": 78}, "dimension_scores": [
+                {"dimension": "Estrategia y Alineación", "score": 58, "benchmark": 75, "gap": -17},
+                {"dimension": "Eficiencia de Procesos", "score": 52, "benchmark": 75, "gap": -23},
+                {"dimension": "Capacidad Tecnológica", "score": 61, "benchmark": 75, "gap": -14},
+            ], "role_scores": {"Estratégico": {"score": 71, "n_responses": 1, "perception": "optimista"}, "Táctico": {"score": 63, "n_responses": 1}, "Operativo": {"score": 52, "n_responses": 1, "perception": "crítico"}}, "delta_sigma": {"max_gap": 2.3, "gap_pairs": [
+                {"roles": "Estratégico vs Operativo", "dimension": "Eficiencia de Procesos", "delta": 2.3, "critical": True, "interpretation": "La dirección sobreestima el proceso respecto a quien lo ejecuta"},
+            ]}},
             "g10b_psicometria": {"cronbach_alpha_overall": 0.82, "internal_consistency": "BUENA", "instrument_reliability": "ALTA"},
-            "g11a_bayesiano":   {"confirmed_hypotheses": ["H01"], "rejected_hypotheses": [], "critical_perception_gaps": [], "bayesian_summary": "Análisis mock"},
+            "g11a_bayesiano":   {"confirmed_hypotheses": ["H01"], "rejected_hypotheses": [], "critical_perception_gaps": [
+                {"hypothesis_id": "H01", "roles": "Estratégico vs Operativo", "delta_sigma": 2.3, "interpretation": "Brecha crítica confirma hipótesis de validación manual heterogénea"},
+            ], "bayesian_summary": "H01 confirmada: evidencia multi-rater y δσ>2 convergen con incidente DDF."},
             "g11b_nlp":         {"themes": [], "sentiment_by_role": {}, "nlp_summary": "NLP mock"},
             "irr_calculator":   {"krippendorff_alpha": 0.82, "irr_status": "APROBADO", "promotion_signal": True},
             "scoring_engine":   {"normalized_scores": {}, "aggregated_dimensions": {}, "percentile_ranks": {}},

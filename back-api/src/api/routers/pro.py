@@ -354,11 +354,19 @@ def _compute_scores_from_responses(responses: list[ProSurveyResponse], questions
 
 async def _run_diagnostic_background(case_id: str) -> None:
     """
-    Ejecuta el diagnóstico Pro usando el pipeline real de Gemini (mismo que Standard).
-    Reutiliza PipelineExecutor + prompts de back-api/pipeline/.
+    Ejecuta el diagnóstico Pro: análisis G10–G14 sobre outputs G01–G08 ya persistidos.
     """
     from api.pipeline.executor import PipelineExecutor
     from api.config import settings as api_settings
+    from api.pipeline.pro_pipeline_tools import (
+        ANALYSIS_TOOLS,
+        build_pro_context,
+        extract_stage_outputs,
+        make_stage_list,
+        merge_outputs_into_context,
+        run_tool_chain,
+    )
+    from sqlalchemy.orm.attributes import flag_modified
 
     SessionLocal = get_async_session_local()
     async with SessionLocal() as db:
@@ -385,19 +393,20 @@ async def _run_diagnostic_background(case_id: str) -> None:
 
             input_payload = case.input_payload or {}
 
-            # Construir contexto inicial igual que Standard
-            context: dict = {
-                "organization_name": case.client_name,
-                "domain": case.domain,
-                "subprocess": input_payload.get("domain", case.domain),
-                "objective": input_payload.get("symptom", ""),
-                "size_org": input_payload.get("size_org", "51-200"),
-            }
+            context = build_pro_context(
+                client_name=case.client_name,
+                domain=case.domain,
+                input_payload=input_payload,
+            )
 
-            # Inyectar respuestas reales de la encuesta (igual que run_diagnostic_from_g10a)
+            # Reutilizar outputs G01–G08 del diseño metodológico
+            existing_stages = list(case.pipeline_stages or [])
+            prior_outputs = extract_stage_outputs(existing_stages)
+            research = input_payload.get("research_design") or {}
+            merge_outputs_into_context(context, {**research, **prior_outputs})
+
             import json as _json
             if all_responses:
-                # Aplicar corrección de ítems inversos
                 q_list = questions_data.get("questions", [])
                 reverse_ids = {q["id"] for q in q_list if q.get("reverse_scored")}
 
@@ -417,77 +426,27 @@ async def _run_diagnostic_background(case_id: str) -> None:
 
                 context["survey_responses_real"] = _json.dumps(responses_data, ensure_ascii=False)
                 context["survey_responses_count"] = str(len(responses_data))
-
-                # Inyectar instrumento G09a para que G10a sepa las dimensiones
                 context["g09a_preguntas"] = _json.dumps(questions_data, ensure_ascii=False)
 
-            # Herramientas post-encuesta (igual que Standard Phase 2)
-            analysis_tools = [
-                "g10a_scoring", "g10b_psicometria", "g11a_bayesiano", "g11b_nlp",
-                "irr_calculator", "scoring_engine", "g12_hallazgos",
-                "g13_redactor", "g14_qa_control",
-            ]
-
             executor = PipelineExecutor(api_settings)
-            tool_results: dict[str, dict] = {}
 
-            # Inicializar stages como pending
-            stages = [{"id": i, "tool_name": t, "status": "pending", "model_used": None, "tokens_used": None, "latency_ms": None, "output": None} for i, t in enumerate(analysis_tools)]
+            # Conservar stages de diseño; añadir análisis
+            analysis_stages = make_stage_list(ANALYSIS_TOOLS, start_id=len(existing_stages))
+            stages = existing_stages + analysis_stages
             case.pipeline_stages = stages
+            flag_modified(case, "pipeline_stages")
             await db.commit()
 
-            from sqlalchemy.orm.attributes import flag_modified
-
-            for i, tool_name in enumerate(analysis_tools):
-                # Marcar como running
-                stages[i]["status"] = "running"
-                case.pipeline_stages = list(stages)
-                flag_modified(case, "pipeline_stages")
-                try:
-                    await db.commit()
-                except Exception:
-                    await db.rollback()
-                    # Si falla actualizar la UI a "running", no importa, continuamos con la ejecución real
-
-                try:
-                    res = await asyncio.wait_for(executor.run_tool(tool_name, context, {}), timeout=120.0)
-                    context[tool_name] = res.get("output", {})
-                    tool_results[tool_name] = res
-                    stages[i].update({
-                        "status": "completed",
-                        "model_used": res.get("model_used"),
-                        "tokens_used": res.get("tokens_used"),
-                        "latency_ms": res.get("latency_ms"),
-                        "output": res.get("output"),
-                    })
-                except asyncio.TimeoutError:
-                    exc_msg = f"Tiempo de espera agotado en {tool_name} (120s)"
-                    context[tool_name] = {"error": exc_msg}
-                    tool_results[tool_name] = {"error": exc_msg}
-                    stages[i].update({"status": "failed", "output": {"error": exc_msg}})
-                except Exception as exc:
-                    context[tool_name] = {"error": str(exc)}
-                    tool_results[tool_name] = {"error": str(exc)}
-                    stages[i].update({"status": "failed", "output": {"error": str(exc)}})
-
-                # Persistir stage con sesión fresca para evitar timeout en llamadas largas a Gemini
-                try:
-                    case.pipeline_stages = list(stages)
-                    flag_modified(case, "pipeline_stages")
-                    await db.commit()
-                except Exception:
-                    await db.rollback()
-                    # Reintentar una vez con sesión nueva
-                    try:
-                        await db.execute(
-                            __import__("sqlalchemy", fromlist=["update"]).update(
-                                type(case)
-                            ).where(type(case).id == case.id).values(pipeline_stages=list(stages))
-                        )
-                        await db.commit()
-                    except Exception:
-                        pass  # El resultado final en fusion_result es lo crítico
-
+            tool_results, stages = await run_tool_chain(
+                executor,
+                ANALYSIS_TOOLS,
+                context,
+                stages,
+                stage_offset=len(existing_stages),
+            )
+            case.pipeline_stages = list(stages)
+            flag_modified(case, "pipeline_stages")
+            await db.commit()
 
             # Extraer resultados del pipeline
             scoring = context.get("g10a_scoring") or {}
@@ -574,10 +533,22 @@ async def _run_diagnostic_background(case_id: str) -> None:
                 if isinstance(rec, dict):
                     sections.append({"title": "Recomendación", "content": rec.get("recommendation", str(rec))})
 
+            all_tools = [s.get("tool_name") for s in stages if s.get("tool_name")]
+            pipeline_outputs = extract_stage_outputs(stages)
+            for tool in ANALYSIS_TOOLS:
+                if tool in context and tool not in pipeline_outputs:
+                    pipeline_outputs[tool] = context[tool]
+
             fusion_result = {
                 "outcome": "PERMIT",
                 "artifact_type": "fusion_cycle",
-                "stage_outcomes": {t: {"outcome": "PERMIT" if "error" not in (tool_results.get(t) or {}) else "ERROR", "artifact_type": t} for t in analysis_tools},
+                "stage_outcomes": {
+                    t: {
+                        "outcome": "PERMIT" if "error" not in (tool_results.get(t) or {}) else "ERROR",
+                        "artifact_type": t,
+                    }
+                    for t in all_tools
+                },
                 "executive_thesis": thesis,
                 "risk_signals": risk_signals,
                 "scoring": {
@@ -589,7 +560,8 @@ async def _run_diagnostic_background(case_id: str) -> None:
                 "hypotheses": hypotheses,
                 "recommended_next_step": next_step,
                 "response_count": len(all_responses),
-                "pipeline_tools_run": analysis_tools,
+                "pipeline_tools_run": all_tools,
+                "pipeline_outputs": pipeline_outputs,
             }
 
             report_result = {
@@ -616,7 +588,7 @@ async def _run_diagnostic_background(case_id: str) -> None:
             case.completed_at = datetime.now(timezone.utc)
 
             _write_evidence(db, case, "diagnostic_evaluation", outcome="PERMIT",
-                           agent="GeminiPipeline", payload={"tools_run": analysis_tools, "responses": len(all_responses)})
+                           agent="GeminiPipeline", payload={"tools_run": all_tools, "responses": len(all_responses)})
 
         except Exception as exc:
             case.case_status = "error"
@@ -809,39 +781,58 @@ async def _generate_survey_background(case_id: str, survey_id: str, body_dict: d
             try:
                 from api.pipeline.executor import PipelineExecutor
                 from api.config import settings as api_settings
+                from api.pipeline.pro_pipeline_tools import (
+                    RESEARCH_DESIGN_TOOLS,
+                    build_pro_context,
+                    extract_stage_outputs,
+                    make_stage_list,
+                    persist_research_design,
+                    run_tool_chain,
+                )
+                from sqlalchemy.orm.attributes import flag_modified
+
                 executor = PipelineExecutor(api_settings)
 
-                # Construir contexto para los agentes
-                paquete = body_dict.get("paquete_hipotesis") or []
-                field_data = body_dict.get("field_data") or {}
-                if not paquete and body_dict.get("hypotheses"):
-                    paquete, field_data = build_hypothesis_pack(
-                        [],
-                        legacy_strings=[h for h in body_dict.get("hypotheses", []) if str(h).strip()],
-                    )
-                symptom = (body_dict.get("extra") or {}).get("symptom", "")
-                if not symptom and paquete:
-                    symptom = str(paquete[0].get("enunciado") or "")
+                context = build_pro_context(
+                    client_name=body_dict.get("client_name", ""),
+                    domain=body_dict.get("domain", ""),
+                    body_dict=body_dict,
+                )
+                paquete = context.get("paquete_hipotesis") or []
 
-                context = {
-                    "organization_name": body_dict.get("client_name", ""),
-                    "domain": body_dict.get("domain", ""),
-                    "subprocess": body_dict.get("domain", ""),
-                    "objective": symptom,
-                    "size_org": str((body_dict.get("extra") or {}).get("size_org", "51-200")),
-                    "g02_configurador": {
-                        "roles": [{"id": r, "label": r} for r in body_dict.get("roles", [])],
-                        "dimensions": [{"id": d, "name": d} for d in body_dict.get("dimensions", [])]
-                    },
-                    "g05_brechas": g05_from_paquete(paquete, field_data),
-                    "paquete_hipotesis": paquete,
-                    "corpus_incidentes": [
-                        inc.get("texto")
-                        for fd in field_data.values()
-                        for inc in (fd.get("corpus_incidentes") or [])
-                        if isinstance(inc, dict) and inc.get("texto")
-                    ],
-                }
+                # ── G01–G08 + BPMN: diseño metodológico previo a la encuesta ─────
+                _log.info("Research design G01-G08 starting for case %s", case_id)
+                _write_evidence(db, case, "research_design_started", outcome="PERMIT", agent="G01-G08")
+                try:
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
+
+                research_stages = make_stage_list(RESEARCH_DESIGN_TOOLS)
+                case.pipeline_stages = research_stages
+                flag_modified(case, "pipeline_stages")
+                try:
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
+
+                _, research_stages = await run_tool_chain(
+                    executor, RESEARCH_DESIGN_TOOLS, context, research_stages, stage_offset=0,
+                )
+                research_outputs = extract_stage_outputs(research_stages)
+                case.pipeline_stages = list(research_stages)
+                case.input_payload = persist_research_design(case.input_payload or {}, research_outputs)
+                flag_modified(case, "pipeline_stages")
+                flag_modified(case, "input_payload")
+                _write_evidence(
+                    db, case, "research_design_completed", outcome="PERMIT", agent="G01-G08",
+                    payload={"tools": RESEARCH_DESIGN_TOOLS, "completed": len(research_outputs)},
+                )
+                try:
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
+
                 # ── G09a: Diseño de preguntas ──────────────────────────────────────
                 _log.info("G09a starting for case %s", case_id)
                 try:
@@ -1185,7 +1176,10 @@ async def generate_deliverables(
     """
     result = await db.execute(
         select(ProCase)
-        .options(selectinload(ProCase.evidence_entries))
+        .options(
+            selectinload(ProCase.evidence_entries),
+            selectinload(ProCase.survey_sessions).selectinload(ProSurveySession.responses),
+        )
         .where(ProCase.id == case_id)
     )
     case = result.scalar_one_or_none()
@@ -1250,7 +1244,12 @@ async def download_deliverable(
 ) -> StreamingResponse:
     import io
     result = await db.execute(
-        select(ProCase).options(selectinload(ProCase.evidence_entries)).where(ProCase.id == case_id)
+        select(ProCase)
+        .options(
+            selectinload(ProCase.evidence_entries),
+            selectinload(ProCase.survey_sessions).selectinload(ProSurveySession.responses),
+        )
+        .where(ProCase.id == case_id)
     )
     case = result.scalar_one_or_none()
     if not case:
@@ -1262,7 +1261,9 @@ async def download_deliverable(
     if target not in ("markdown", "docx", "pdf"):
         raise HTTPException(status_code=400, detail="Target inválido.")
 
-    safe_name = case.client_name.replace(" ", "_").lower()
+    import re
+    safe_name = re.sub(r"[^\w\s-]", "", case.client_name, flags=re.UNICODE)
+    safe_name = re.sub(r"\s+", "_", safe_name.strip()).lower()[:60] or "diagnostico"
     evidence = [_evidence_summary(e) for e in (case.evidence_entries or [])]
 
     if target == "markdown":
@@ -1403,7 +1404,10 @@ async def get_pro_survey_audit(token: str, db: AsyncSession = Depends(get_db)) -
     dim_audit = []
     for dim in dimensions:
         dim_id = dim.get("id")
-        dim_qs = [q for q in questions if q.get("dimension") == dim_id and q.get("type") == "likert_5"]
+        dim_qs = [
+            q for q in questions
+            if q.get("dimension") in (dim_id, dim.get("name")) and q.get("type") == "likert_5"
+        ]
         dim_entry = {
             "id": dim_id, "name": dim.get("name"),
             "hypothesis_mapped": dim.get("hypothesis_mapped"),

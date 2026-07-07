@@ -18,6 +18,38 @@ from api.models.pro import ProCase, ProSurveySession, ProSurveyResponse
 
 router = APIRouter(prefix="/survey", tags=["survey"])
 
+# Roles almacenados en respuestas (español). session.roles puede traer IDs en inglés del instrumento.
+SURVEY_RESPONSE_ROLES = ["Estratégico", "Táctico", "Operativo"]
+ROLE_ID_TO_LABEL = {
+    "executive": "Estratégico",
+    "operations": "Operativo",
+    "technology": "Táctico",
+    "management": "Táctico",
+    "estrategico": "Estratégico",
+    "tactico": "Táctico",
+    "operativo": "Operativo",
+}
+
+
+def _normalize_role_label(role: str | None) -> str | None:
+    if not role:
+        return None
+    key = role.strip().lower()
+    if role in SURVEY_RESPONSE_ROLES:
+        return role
+    return ROLE_ID_TO_LABEL.get(key, role)
+
+
+def _roles_for_responses(session) -> list[str]:
+    """Etiquetas de rol usadas en stats/auditoría — siempre alineadas con respuestas guardadas."""
+    return list(SURVEY_RESPONSE_ROLES)
+
+
+def _question_in_dimension(q: dict, dim: dict) -> bool:
+    """Las preguntas pueden referenciar dimensión por id o por nombre."""
+    qdim = q.get("dimension")
+    return qdim in (dim.get("id"), dim.get("name"))
+
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -91,9 +123,11 @@ async def get_survey(token: str, db: AsyncSession = Depends(get_db)) -> SurveyIn
         ]
         estimated_minutes = int(sum(times) / len(times)) if times else 15
 
-    available_roles = ["Estratégico", "Táctico", "Operativo"]
+    available_roles = _roles_for_responses(session)
     if hasattr(session, "roles") and session.roles:
-        available_roles = session.roles
+        # Para UI: mapear IDs del instrumento a etiquetas en español
+        mapped = [_normalize_role_label(r) or r for r in session.roles]
+        available_roles = list(dict.fromkeys(mapped + SURVEY_RESPONSE_ROLES))
 
     return SurveyInfoOut(
         organization_name=org_name,
@@ -140,16 +174,11 @@ async def submit_response(
         raise HTTPException(status_code=410, detail="Survey is closed")
 
     # Normalize Pro role IDs (english → spanish) for the standard validator
-    _ROLE_MAP = {
-        "executive":  "Estratégico",
-        "operations": "Operativo",
-        "technology": "Táctico",
-        "management": "Táctico",
-    }
-    submitted_role = _ROLE_MAP.get(body.role.lower(), body.role)
+    _ROLE_MAP = ROLE_ID_TO_LABEL
+    submitted_role = _normalize_role_label(body.role) or body.role
 
     # Validate role — accept spanish labels OR any role in the session's configured list
-    valid_standard_roles = ["Estratégico", "Táctico", "Operativo"]
+    valid_standard_roles = SURVEY_RESPONSE_ROLES
     session_roles = list(session.roles or []) if is_pro else []
     all_valid = valid_standard_roles + session_roles + list(_ROLE_MAP.keys())
 
@@ -425,8 +454,8 @@ async def get_survey_audit(
     q_reverse = {q["id"]: q.get("reverse_scored", False) for q in questions}
 
     # Per-question stats: raw scores and corrected scores by role
-    available_roles = (session.roles if hasattr(session, "roles") else None) or ["Estratégico", "Táctico", "Operativo"]
-    
+    available_roles = _roles_for_responses(session)
+
     q_stats: dict = {}
     for q in questions:
         qid = q["id"]
@@ -440,18 +469,20 @@ async def get_survey_audit(
     open_answers_by_role: dict = {role: [] for role in available_roles}
 
     for resp in responses:
-        role = resp.role
+        role = _normalize_role_label(resp.role)
+        if not role:
+            continue
         for qid, val in (resp.answers or {}).items():
             if qid not in q_stats or not isinstance(val, (int, float)):
                 continue
             raw = int(val)
             corrected = (6 - raw) if q_reverse.get(qid, False) else raw
-            q_stats[qid]["raw_by_role"][role].append(raw)
-            q_stats[qid]["corrected_by_role"][role].append(corrected)
+            q_stats[qid]["raw_by_role"].setdefault(role, []).append(raw)
+            q_stats[qid]["corrected_by_role"].setdefault(role, []).append(corrected)
 
         for qid, text in (resp.open_answers or {}).items():
-            if text and role in open_answers_by_role:
-                open_answers_by_role[role].append({"question_id": qid, "text": text})
+            if text:
+                open_answers_by_role.setdefault(role, []).append({"question_id": qid, "text": text})
 
     # Build per-question summary
     questions_audit = []
@@ -473,8 +504,8 @@ async def get_survey_audit(
             stats = q_stats[qid]
             entry["response_stats"] = {}
             for role in available_roles:
-                raw_vals = stats["raw_by_role"][role]
-                cor_vals = stats["corrected_by_role"][role]
+                raw_vals = stats["raw_by_role"].get(role, [])
+                cor_vals = stats["corrected_by_role"].get(role, [])
                 if raw_vals:
                     entry["response_stats"][role] = {
                         "n":                len(raw_vals),
@@ -489,7 +520,10 @@ async def get_survey_audit(
     dim_audit = []
     for dim in dimensions:
         dim_id = dim.get("id")
-        dim_questions = [q for q in questions if q.get("dimension") == dim_id and q.get("type") == "likert_5"]
+        dim_questions = [
+            q for q in questions
+            if _question_in_dimension(q, dim) and q.get("type") == "likert_5"
+        ]
         dim_entry = {
             "id":                   dim_id,
             "name":                 dim.get("name"),
@@ -507,7 +541,7 @@ async def get_survey_audit(
             for q in dim_questions:
                 qid = q["id"]
                 if qid in q_stats:
-                    all_corrected.extend(q_stats[qid]["corrected_by_role"][role])
+                    all_corrected.extend(q_stats[qid]["corrected_by_role"].get(role, []))
             if all_corrected:
                 avg = sum(all_corrected) / len(all_corrected)
                 role_scores[role] = round((avg - 1) / 4 * 100, 1)
@@ -523,8 +557,8 @@ async def get_survey_audit(
         "survey_status":    session.status,
         "total_responses":  session.responses_count,
         "responses_by_role": {
-            role: sum(1 for r in responses if r.role == role)
-            for role in ["Estratégico", "Táctico", "Operativo"]
+            role: sum(1 for r in responses if _normalize_role_label(r.role) == role)
+            for role in SURVEY_RESPONSE_ROLES
         },
         "reverse_scored_items": [q["id"] for q in questions if q.get("reverse_scored")],
         "correction_formula":   "corrected = 6 - raw (Likert 1-5)",

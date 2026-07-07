@@ -194,7 +194,8 @@ import { useDownloadProCase } from "@/hooks/useDownload";
 
 // ── Panel de resultados completo ──────────────────────────────────────────────
 export function ProResultsPanel({ caseData, caseId }: { caseData: any; caseId: string }) {
-  const { download, loading: downloading } = useDownloadProCase();
+  const { download, loading: downloading, error: downloadError } = useDownloadProCase();
+  const canDownload = ["approved", "published"].includes(caseData.case_status);
 
   const fusion  = caseData.fusion_result  ?? {};
   const report  = caseData.report_result  ?? {};
@@ -224,12 +225,23 @@ export function ProResultsPanel({ caseData, caseId }: { caseData: any; caseId: s
             {(caseData.deliverables ?? []).length} entregables generados
           </p>
         </div>
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
+          {!canDownload && (
+            <p style={{ margin: 0, fontSize: "10px", color: "rgba(244,241,234,0.55)", fontFamily: "IBM Plex Mono, monospace" }}>
+              Aprueba el caso para habilitar descargas
+            </p>
+          )}
+          {downloadError && (
+            <p style={{ margin: 0, fontSize: "10px", color: "#e8b4b4", fontFamily: "IBM Plex Mono, monospace", maxWidth: "280px", textAlign: "right" }}>
+              {downloadError}
+            </p>
+          )}
+          <div style={{ display: "flex", gap: "8px" }}>
           {["markdown", "docx", "pdf"].map(target => (
             <button
               key={target}
-              onClick={() => download(caseId, target, caseData.client_name ?? "diagnostico")}
-              disabled={!!downloading}
+              onClick={() => download(caseId, target, caseData.client_name ?? "diagnostico").catch(() => {})}
+              disabled={!!downloading || !canDownload}
               style={{
                 display: "flex", alignItems: "center", gap: "6px",
                 minHeight: "38px", border: "1px solid rgba(244,241,234,0.2)", padding: "8px 14px",
@@ -246,6 +258,7 @@ export function ProResultsPanel({ caseData, caseId }: { caseData: any; caseId: s
               {target.toUpperCase()}
             </button>
           ))}
+          </div>
         </div>
       </div>
 

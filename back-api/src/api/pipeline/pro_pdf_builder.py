@@ -37,7 +37,7 @@ try:
     C_OFFWH  = colors.HexColor("#f3eee6")
     C_BORDER = colors.HexColor("#e0d9ce")
 
-    SECTION_COLORS = [C_NAVY] * 10
+    SECTION_COLORS = [C_NAVY] * 14
     MARGIN_X = 2.0 * cm
     MARGIN_TOP = 2.2 * cm
     MARGIN_BOT = 2.0 * cm
@@ -66,7 +66,7 @@ _PLACEHOLDER_PATTERN = re.compile(
 def _clean(val: Any, fallback: str = "—") -> str:
     if val is None:
         return fallback
-    t = _PLACEHOLDER_PATTERN.sub("validado", str(val)).strip()
+    t = _PLACEHOLDER_PATTERN.sub("", str(val)).strip()
     return re.sub(r"\s+", " ", t) or fallback
 
 
@@ -955,20 +955,41 @@ def _sec10(case: Any, report: dict, md_text: str, s: dict) -> list:
     return elems
 
 
-# ── TOC ───────────────────────────────────────────────────────────────────────
+def _sec_generic(section_num: int, title: str, md_text: str, s: dict, color=None) -> list:
+    """Renderiza secciones 11+ desde markdown parseado."""
+    elems = _section_band(
+        f"{section_num}. {title}",
+        "Contenido derivado del pipeline gobernado ARHIAX Dx.",
+        color or SECTION_COLORS[min(section_num - 1, len(SECTION_COLORS) - 1)],
+    )
+    for para in _md_paragraphs(md_text)[:6]:
+        elems.append(Paragraph(para, s["body"]))
+    for tbl_data in _md_tables(md_text):
+        tbl = _md_table_flowable(tbl_data, s, SECTION_COLORS[min(section_num - 1, len(SECTION_COLORS) - 1)])
+        if tbl:
+            elems.append(Spacer(1, 0.1 * cm))
+            elems.append(tbl)
+    for bullet in _md_bullets(md_text)[:12]:
+        elems.append(Paragraph(f"• {bullet}", s["body"]))
+    return elems
+
 
 def _toc(s: dict) -> list:
     sections = [
         (SECTION_COLORS[0], "1.", "Resumen ejecutivo"),
-        (SECTION_COLORS[1], "2.", "Diagnostico de madurez"),
-        (SECTION_COLORS[2], "3.", "Proceso AS-IS"),
-        (SECTION_COLORS[3], "4.", "Hallazgos del proceso"),
-        (SECTION_COLORS[4], "5.", "Proceso TO-BE"),
-        (SECTION_COLORS[5], "6.", "Matriz AS-IS -> TO-BE"),
-        (SECTION_COLORS[6], "7.", "Reglas de decision"),
-        (SECTION_COLORS[7], "8.", "Roadmap de implementacion"),
-        (SECTION_COLORS[8], "9.", "Gobernanza y trazabilidad"),
-        (SECTION_COLORS[9], "10.", "Anexo tecnico"),
+        (SECTION_COLORS[1], "2.", "Cienciometria"),
+        (SECTION_COLORS[2], "3.", "Diagnostico de madurez"),
+        (SECTION_COLORS[3], "4.", "Cartografia sectorial"),
+        (SECTION_COLORS[4], "5.", "Marco TRIZ / DDF"),
+        (SECTION_COLORS[5], "6.", "Proceso AS-IS"),
+        (SECTION_COLORS[6], "7.", "Hallazgos del proceso"),
+        (SECTION_COLORS[7], "8.", "Proceso TO-BE"),
+        (SECTION_COLORS[8], "9.", "Matriz AS-IS -> TO-BE"),
+        (SECTION_COLORS[9], "10.", "Reglas de decision"),
+        (SECTION_COLORS[10], "11.", "Roadmap"),
+        (SECTION_COLORS[11], "12.", "Psicometria"),
+        (SECTION_COLORS[12], "13.", "Gobernanza"),
+        (SECTION_COLORS[13], "14.", "Anexo tecnico"),
     ]
     elems: list = []
     elems.append(Paragraph("Contenido", s["toc_num"]))
@@ -1011,55 +1032,9 @@ def _add_section(story: list, elems: list, *, page_break: bool = True) -> None:
 
 
 def build_pro_pdf(case: Any, evidence: list | None = None) -> bytes:
-    if not PDF_AVAILABLE:
-        raise RuntimeError("reportlab no instalado")
-
-    from api.pipeline.pro_markdown_builder import build_pro_markdown
-
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf, pagesize=LETTER,
-        leftMargin=MARGIN_X, rightMargin=MARGIN_X,
-        topMargin=MARGIN_TOP + HEADER_H,
-        bottomMargin=MARGIN_BOT + FOOTER_H,
-        title=f"Diagnostico Ejecutivo — {case.client_name}",
-        author="ARHIAX DxPro v1 · Sinergia Consulting Group",
-    )
-
-    s = _styles()
-    fusion = case.fusion_result or {}
-    report = case.report_result or {}
-    ev_list = [_ev_to_dict(e) for e in (evidence or [])]
-    if not ev_list and getattr(case, "evidence_entries", None):
-        ev_list = [_ev_to_dict(e) for e in case.evidence_entries]
-
-    md = build_pro_markdown(case)
-    md_sections = _split_md_sections(md)
-
-    story: list = []
-    story.append(Spacer(1, 1))
-    story.append(PageBreak())
-    story += _toc(s)
-    _add_section(story, _sec1(fusion, md_sections.get(1, ""), s), page_break=False)
-    _add_section(story, _sec2(fusion, md_sections.get(2, ""), s))
-    _add_section(story, _sec3(md_sections.get(3, ""), s))
-    _add_section(story, _sec4(fusion, md_sections.get(4, ""), s))
-    _add_section(story, _sec5(md_sections.get(5, ""), s))
-    _add_section(story, _sec6(md_sections.get(6, ""), s))
-    _add_section(story, _sec7(md_sections.get(7, ""), s))
-    _add_section(story, _sec8(fusion, md_sections.get(8, ""), s))
-    _add_section(story, _sec9(case, fusion, ev_list, md_sections.get(9, ""), s))
-    _add_section(story, _sec10(case, report, md_sections.get(10, ""), s))
-
-    def _first_page(canvas, doc_):
-        _cover_page(canvas, case, fusion)
-
-    def _later(canvas, doc_):
-        _later_pages(canvas, doc_)
-
-    doc.build(story, onFirstPage=_first_page, onLaterPages=_later)
-    buf.seek(0)
-    return buf.read()
+    """Genera PDF denso desde datos del pipeline (sin placeholders genéricos)."""
+    from api.pipeline.pro_pdf_report import build_pro_pdf_dense
+    return build_pro_pdf_dense(case, evidence)
 
 
 def _ev_to_dict(e: Any) -> dict:

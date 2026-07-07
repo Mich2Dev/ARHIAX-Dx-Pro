@@ -274,12 +274,25 @@ export function SurveyAuditPanel({ surveyToken, isPro }: { surveyToken: string, 
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["survey-audit", surveyToken, isPro],
-    queryFn: () => api.get(`/survey/${surveyToken}/audit`).then(r => r.data),
+    queryFn: () => {
+      const client = isPro ? apiPro : api;
+      const path = isPro
+        ? `/pro/survey/${surveyToken}/audit`
+        : `/survey/${surveyToken}/audit`;
+      return client.get(path).then((r) => r.data);
+    },
     enabled: !!surveyToken,
   });
 
   if (isLoading) return <div className="flex justify-center py-12"><Spinner /></div>;
-  if (error) return <div className="p-4 bg-red-50 text-red-600 text-xs font-mono">Error loading audit: {(error as any).message}</div>;
+  if (error) {
+    const msg = error instanceof Error ? error.message : "Error desconocido";
+    return (
+      <div className="p-4 bg-red-50 text-red-600 text-xs font-mono border border-red-200">
+        Error loading audit: {msg}
+      </div>
+    );
+  }
   if (!data) return null;
 
   const tabs = [
