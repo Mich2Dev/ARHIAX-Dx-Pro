@@ -1,0 +1,30 @@
+# Git and IDE
+.git
+.gitignore
+.vscode
+.idea
+
+# Local env and secrets
+.env
+.env.*
+
+# Node / Next.js caches (rebuilt in image)
+front/node_modules
+front/.next
+**/node_modules
+
+# Python caches
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/*.egg-info
+
+# Generated exports and demos (not needed in image)
+exports/
+demo_pdfs/
+*.pdf
+rkelab_pdf_text.txt
+
+# OS junk
+.DS_Store
+Thumbs.db
