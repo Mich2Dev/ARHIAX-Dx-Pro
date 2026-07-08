@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from api.pipeline.hypothesis_pack import build_hypothesis_pack, g05_from_paquete
+from api.pipeline.llm_guard import PipelineStageFailureError
 
 RESEARCH_DESIGN_TOOLS: list[str] = [
     "g01_receptor",
@@ -103,19 +104,36 @@ def build_pro_context(
         paquete, field_data = build_hypothesis_pack([], legacy_strings=legacy)
 
     extra = body.get("extra") or payload.get("extra") or {}
-    symptom = extra.get("symptom") or payload.get("symptom") or ""
+    # Campos del wizard se aplana en input_payload; leer también de la raíz.
+    def _field(key: str, default: Any = "") -> Any:
+        return extra.get(key) or payload.get(key) or body.get(key) or default
+
+    symptom = _field("symptom")
     if not symptom and paquete:
         symptom = str(paquete[0].get("enunciado") or "")
 
     roles = body.get("roles") or payload.get("roles") or ["executive", "operations", "technology"]
     dimensions = body.get("dimensions") or payload.get("dimensions") or ["strategy", "process", "technology"]
 
+    operativo_extra = {
+        "sector": _field("sector"),
+        "size_org": _field("size_org"),
+        "years_operating": _field("years_operating"),
+        "areas_count": _field("areas_count"),
+        "expected_outcome": _field("expected_outcome"),
+        "previous_attempts": _field("previous_attempts"),
+    }
+    from api.pipeline.pro_report_data import _format_quantitative_context
+    operational_context = _format_quantitative_context(operativo_extra)
+
     context: dict[str, Any] = {
         "organization_name": client_name or body.get("client_name", ""),
         "domain": domain or body.get("domain", ""),
-        "subprocess": extra.get("subprocess") or payload.get("subprocess") or domain,
+        "sector": _field("sector") or domain or body.get("domain", ""),
+        "subprocess": _field("subprocess") or payload.get("subprocess") or domain,
         "objective": symptom,
-        "size_org": str(extra.get("size_org") or payload.get("size_org") or "51-200"),
+        "size_org": str(_field("size_org") or "51-200"),
+        "operational_context": operational_context,
         "paquete_hipotesis": paquete,
         "corpus_incidentes": [
             inc.get("texto")
@@ -204,10 +222,18 @@ async def run_tool_chain(
             context[tool_name] = {"error": exc_msg}
             tool_results[tool_name] = {"error": exc_msg}
             stages[idx].update({"status": "failed", "output": {"error": exc_msg}})
+            raise PipelineStageFailureError(tool_name, exc_msg)
+        except PipelineStageFailureError as exc:
+            context[tool_name] = {"error": exc.reason}
+            tool_results[tool_name] = {"error": exc.reason}
+            stages[idx].update({"status": "failed", "output": {"error": exc.reason}})
+            raise
         except Exception as exc:
-            context[tool_name] = {"error": str(exc)}
-            tool_results[tool_name] = {"error": str(exc)}
-            stages[idx].update({"status": "failed", "output": {"error": str(exc)}})
+            exc_msg = str(exc)
+            context[tool_name] = {"error": exc_msg}
+            tool_results[tool_name] = {"error": exc_msg}
+            stages[idx].update({"status": "failed", "output": {"error": exc_msg}})
+            raise PipelineStageFailureError(tool_name, exc_msg) from exc
 
     return tool_results, stages
 

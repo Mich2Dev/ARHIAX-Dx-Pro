@@ -54,11 +54,12 @@ CONTEXTO:
 - Organización: {organization_name} ({size_org} empleados)
 - Proceso AS-IS: {g06_bpmn_architect}
 - Brechas: {g05_brechas}
+- Contexto operativo: {operational_context}
 
 INSTRUCCIONES:
 1. Para cada cuello de botella identificado, calcula el score de impacto (1-10).
 2. Estima la frecuencia de ocurrencia (diaria/semanal/mensual).
-3. Calcula el costo de oportunidad perdida en USD/mes.
+3. Estima el costo de oportunidad perdida en USD/mes como ESTIMACIÓN profesional (indica supuestos); el cliente no aporta cifras financieras.
 4. Prioriza por impacto × frecuencia.
 
 Responde ÚNICAMENTE en JSON:
@@ -97,12 +98,13 @@ CONTEXTO:
 - Cuellos de botella: {g07_cuellos}
 - Proceso AS-IS: {g06_bpmn_architect}
 - Benchmarks del sector: {g04_cartografo}
+- Contexto operativo: {operational_context}
 
 INSTRUCCIONES:
 1. Diseña 2-3 opciones de mejora TO-BE con diferente nivel de inversión.
-2. Para cada opción calcula ROI, payback y análisis de sensibilidad.
+2. Para cada opción calcula ROI, payback y análisis de sensibilidad como ESTIMACIÓN profesional con supuestos explícitos (el cliente no aporta presupuesto ni cifras financieras).
 3. Recomienda la opción óptima con justificación.
-4. Define el roadmap de implementación en 90/180/365 días.
+4. Define el roadmap de implementación en 90/180/365 días con KPIs verificables.
 
 Responde ÚNICAMENTE en JSON:
 {

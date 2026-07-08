@@ -60,3 +60,13 @@ data/
 logs/
 .tools/
 *.lnk
+
+# Dev artifacts / generated outputs (not source)
+exports/
+back-api/out_e2e/
+demo_pdfs/
+/src/
+ARHIAX_DxPro_informe_cliente_mockup.pdf
+diagnostico_v7_demo.pdf
+diagnostico_v7_sistema.pdf
+rkelab_pdf_text.txt

@@ -12,14 +12,14 @@ MODEL_ROUTING: dict[str, dict] = {
     # Scoring
     "g10a_scoring":      {"model": "gemini-2.5-flash", "max_tokens": 8192,  "temperature": 0.2},
     # Research & design
-    "g03_cienciometro":   {"model": "gemini-2.5-flash", "max_tokens": 8192, "temperature": 0.3},
-    "g04_cartografo":     {"model": "gemini-2.5-flash", "max_tokens": 8192, "temperature": 0.3},
-    "g06_bpmn_architect": {"model": "gemini-2.5-flash", "max_tokens": 8192, "temperature": 0.3},
+    "g03_cienciometro":   {"model": "gemini-2.5-flash", "max_tokens": 16384, "temperature": 0.3},
+    "g04_cartografo":     {"model": "gemini-2.5-flash", "max_tokens": 16384, "temperature": 0.3},
+    "g06_bpmn_architect": {"model": "gemini-2.5-flash", "max_tokens": 16384, "temperature": 0.3},
     "g07_cuellos":        {"model": "gemini-2.5-flash", "max_tokens": 8192, "temperature": 0.3},
-    "g08_optimizador":    {"model": "gemini-2.5-flash", "max_tokens": 8192, "temperature": 0.3},
+    "g08_optimizador":    {"model": "gemini-2.5-flash", "max_tokens": 16384, "temperature": 0.3},
     "academic_search":    {"model": "gemini-2.5-flash", "max_tokens": 8192, "temperature": 0.3},
     "web_search":         {"model": "gemini-2.5-flash", "max_tokens": 8192, "temperature": 0.3},
-    "bpmn_generator":     {"model": "gemini-2.5-flash", "max_tokens": 8192, "temperature": 0.3},
+    "bpmn_generator":     {"model": "gemini-2.5-flash", "max_tokens": 16384, "temperature": 0.3},
     # Survey & NLP
     "g09a_preguntas":  {"model": "gemini-2.5-flash", "max_tokens": 16384, "temperature": 0.3},
     "g09c_validacion": {"model": "gemini-2.5-flash", "max_tokens": 8192,  "temperature": 0.3},

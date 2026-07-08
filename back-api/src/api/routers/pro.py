@@ -33,6 +33,7 @@ from api.db import get_db, get_async_session_local
 from api.models import User
 from api.models.pro import ProCase, ProEvidence, ProSurveySession, ProSurveyResponse
 from api.pipeline.hypothesis_pack import build_hypothesis_pack, g05_from_paquete
+from api.pipeline.llm_guard import assert_pipeline_stages_ok, stages_failed
 from api.services.grammar_gate import lint_markdown
 
 router = APIRouter(prefix="/pro", tags=["pro"])
@@ -219,86 +220,6 @@ def _ensure_case_grammar_report(case: ProCase) -> dict:
     return grammar_report
 
 
-def _generate_question_bank(roles: list[str], dimensions: list[str], domain: str, hypotheses: list[str]) -> dict:
-    """Genera banco de preguntas adaptativo (fallback determinista mejorado)."""
-    role_labels = {"executive": "Estratégico", "operations": "Operativo", "technology": "Tecnológico"}
-    dim_labels = {
-        "strategy": "Estrategia y Alineación", 
-        "process": "Eficiencia de Procesos", 
-        "technology": "Capacidad Tecnológica",
-        "governance": "Gobernanza y Control", 
-        "innovation": "Cultura de Innovación", 
-        "people": "Talento y Competencias",
-    }
-
-    # Preguntas base por dimensión (Mejoradas para que no suenen tan genéricas)
-    dim_questions: dict[str, list[dict]] = {
-        "strategy": [
-            {"text": f"La visión estratégica para el área de {domain} es comunicada con claridad por la dirección.", "reverse": False},
-            {"text": f"Existen indicadores claros para medir el éxito del subproceso {domain}.", "reverse": False},
-            {"text": "Las prioridades cambian con tanta frecuencia que es difícil terminar las tareas importantes.", "reverse": True},
-            {"text": f"La estrategia actual de {domain} responde bien a las demandas actuales del mercado.", "reverse": False},
-        ],
-        "process": [
-            {"text": f"Los flujos de trabajo en {domain} están bien definidos y evitan duplicidad de tareas.", "reverse": False},
-            {"text": "Frecuentemente dependemos de la memoria de las personas más que de procesos documentados.", "reverse": True},
-            {"text": "El tiempo dedicado a resolver errores es mayor al tiempo dedicado a la ejecución estándar.", "reverse": True},
-            {"text": f"Contamos con los recursos necesarios para ejecutar el subproceso {domain} sin bloqueos.", "reverse": False},
-        ],
-        "technology": [
-            {"text": f"Las herramientas digitales que usamos para {domain} facilitan realmente el trabajo.", "reverse": False},
-            {"text": "Perdemos mucho tiempo pasando información manualmente entre diferentes sistemas.", "reverse": True},
-            {"text": "La infraestructura tecnológica actual limita nuestra capacidad de crecer.", "reverse": True},
-            {"text": "Recibimos capacitación adecuada ante cada cambio tecnológico importante.", "reverse": False},
-        ],
-        "governance": [
-            {"text": "Es claro quién tiene la autoridad para tomar decisiones críticas en el día a día.", "reverse": False},
-            {"text": "Existen mecanismos de control que garantizan la calidad sin burocratizar el proceso.", "reverse": False},
-            {"text": "A menudo hay confusión sobre las responsabilidades de cada rol en el subproceso.", "reverse": True},
-            {"text": "Las políticas internas se aplican de forma consistente y no solo cuando hay crisis.", "reverse": False},
-        ],
-        "innovation": [
-            {"text": "Se nos motiva a proponer mejoras sobre cómo hacemos las cosas actualmente.", "reverse": False},
-            {"text": "Cuando cometemos un error, el foco está en aprender más que en buscar culpables.", "reverse": False},
-            {"text": "La carga de trabajo actual es tan alta que no hay espacio para probar nuevas ideas.", "reverse": True},
-            {"text": "La organización implementa rápidamente las sugerencias de mejora que son viables.", "reverse": False},
-        ],
-        "people": [
-            {"text": "El equipo cuenta con los conocimientos técnicos requeridos para su función actual.", "reverse": False},
-            {"text": "Existe un plan de desarrollo claro para quienes quieren crecer profesionalmente aquí.", "reverse": False},
-            {"text": "La falta de personal clave suele retrasar la operación de forma crítica.", "reverse": True},
-            {"text": "El nivel de colaboración entre compañeros facilita el cumplimiento de objetivos.", "reverse": False},
-        ],
-    }
-
-    questions = []
-    q_num = 1
-    # Asegurarse de que cada dimensión tenga preguntas
-    for dim in dimensions:
-        base_qs = dim_questions.get(dim, dim_questions["process"])
-        for i, q in enumerate(base_qs):
-            questions.append({
-                "id": f"Q{q_num:03d}",
-                "dimension": dim_labels.get(dim, dim),
-                "text": q["text"],
-                "type": "likert_5",
-                "roles": roles,
-                "reverse_scored": q["reverse"],
-                "hypothesis_tested": hypotheses[0] if hypotheses else None,
-                "rationale": f"Validación de {dim} en el contexto de {domain}.",
-            })
-            q_num += 1
-
-    return {
-        "instrument_name": f"Diagnóstico Adaptativo — {domain}",
-        "methodology": "Multi-rater Likert 1-5 (Fallback Determinista)",
-        "roles": [{"id": r, "label": role_labels.get(r, r)} for r in roles],
-        "dimensions": [{"id": d, "name": dim_labels.get(d, d)} for d in dimensions],
-        "questions": questions,
-        "scale": {"min": 1, "max": 5, "labels": {"1": "Totalmente en desacuerdo", "3": "Neutral", "5": "Totalmente de acuerdo"}},
-    }
-
-
 def _compute_scores_from_responses(responses: list[ProSurveyResponse], questions: dict) -> dict:
     """Calcula scores reales desde las respuestas de la encuesta."""
     q_list = questions.get("questions", [])
@@ -444,6 +365,7 @@ async def _run_diagnostic_background(case_id: str) -> None:
                 stages,
                 stage_offset=len(existing_stages),
             )
+            assert_pipeline_stages_ok(stages, ANALYSIS_TOOLS)
             case.pipeline_stages = list(stages)
             flag_modified(case, "pipeline_stages")
             await db.commit()
@@ -592,24 +514,78 @@ async def _run_diagnostic_background(case_id: str) -> None:
 
         except Exception as exc:
             case.case_status = "error"
+            case.pmel_outcome = "DENY"
+            case.approval_status = "draft"
             case.fusion_result = {"outcome": "ERROR", "error": str(exc)}
-            _write_evidence(db, case, "diagnostic_error", outcome="ERROR", payload={"error": str(exc)})
+            _write_evidence(
+                db,
+                case,
+                "diagnostic_error",
+                outcome="DENY",
+                payload={"error": str(exc), "policy": "fail_closed_no_mock"},
+            )
 
         await db.commit()
 
 
-def _evaluate_hypotheses(hyp_list: list, scoring: dict) -> list:
-    overall = scoring.get("overall_score", 50)
-    return [
-        {
-            "id": h["id"],
-            "statement": h["statement"],
-            "prior": h.get("prior", 0.5),
-            "posterior": round(min(0.95, h.get("prior", 0.5) + (75 - overall) / 200), 2),
-            "supported": overall < 70,
-        }
-        for h in hyp_list
-    ]
+def _pipeline_failure_detail(case: ProCase) -> dict[str, Any] | None:
+    failed = stages_failed(case.pipeline_stages)
+    if not failed:
+        return None
+    stage = failed[0]
+    out = stage.get("output")
+    err = out.get("error") if isinstance(out, dict) else str(out or "etapa fallida")
+    return {
+        "tool": stage.get("tool_name"),
+        "error": err,
+        "failed_stages": [
+            {"tool": s.get("tool_name"), "error": (s.get("output") or {}).get("error")}
+            for s in failed
+        ],
+    }
+
+
+def _block_if_pipeline_compromised(case: ProCase, action: str) -> None:
+    if case.case_status == "error":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"No se puede {action}: el caso está en error de pipeline.",
+                "pipeline": _pipeline_failure_detail(case),
+            },
+        )
+    detail = _pipeline_failure_detail(case)
+    if detail:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"No se puede {action}: hay etapas del pipeline sin LLM real.",
+                "pipeline": detail,
+            },
+        )
+
+
+async def _mark_case_pipeline_error(
+    db: AsyncSession,
+    case: ProCase,
+    survey: ProSurveySession | None,
+    error: str,
+    *,
+    agent: str = "Pipeline",
+) -> None:
+    case.case_status = "error"
+    case.pmel_outcome = "DENY"
+    case.approval_status = "draft"
+    if survey is not None:
+        survey.status = "error"
+    _write_evidence(
+        db,
+        case,
+        "pipeline_failed",
+        outcome="DENY",
+        agent=agent,
+        payload={"error": error, "policy": "fail_closed_no_mock"},
+    )
 
 
 def _recommend_next_step(scoring: dict, low_dims: list) -> str:
@@ -746,9 +722,8 @@ async def create_case(
 
 async def _generate_survey_background(case_id: str, survey_id: str, body_dict: dict):
     """
-    Tarea en segundo plano para ejecutar la cadena G09a/b/c.
-    Garantía: el caso SIEMPRE avanza de 'designing' → 'survey_open',
-    ya sea con preguntas de Gemini o con el fallback determinista.
+    Ejecuta G01–G08 + G09a/b/c con LLM real.
+    Fail-closed: cualquier fallo deja el caso en error (sin mock ni fallback determinista).
     """
     print(f"\n[PANIC-LOG] STARTING background survey generation for case_id={case_id}\n")
     from api.db import get_async_session_local
@@ -774,15 +749,12 @@ async def _generate_survey_background(case_id: str, survey_id: str, body_dict: d
             except Exception:
                 await db.rollback()
 
-            questions_final = None
-            branching_final = None
-            error_log = None
-
             try:
                 from api.pipeline.executor import PipelineExecutor
                 from api.config import settings as api_settings
                 from api.pipeline.pro_pipeline_tools import (
                     RESEARCH_DESIGN_TOOLS,
+                    SURVEY_TOOLS,
                     build_pro_context,
                     extract_stage_outputs,
                     make_stage_list,
@@ -798,27 +770,21 @@ async def _generate_survey_background(case_id: str, survey_id: str, body_dict: d
                     domain=body_dict.get("domain", ""),
                     body_dict=body_dict,
                 )
-                paquete = context.get("paquete_hipotesis") or []
 
-                # ── G01–G08 + BPMN: diseño metodológico previo a la encuesta ─────
                 _log.info("Research design G01-G08 starting for case %s", case_id)
                 _write_evidence(db, case, "research_design_started", outcome="PERMIT", agent="G01-G08")
-                try:
-                    await db.commit()
-                except Exception:
-                    await db.rollback()
+                await db.commit()
 
                 research_stages = make_stage_list(RESEARCH_DESIGN_TOOLS)
                 case.pipeline_stages = research_stages
                 flag_modified(case, "pipeline_stages")
-                try:
-                    await db.commit()
-                except Exception:
-                    await db.rollback()
+                await db.commit()
 
                 _, research_stages = await run_tool_chain(
                     executor, RESEARCH_DESIGN_TOOLS, context, research_stages, stage_offset=0,
                 )
+                assert_pipeline_stages_ok(research_stages, RESEARCH_DESIGN_TOOLS)
+
                 research_outputs = extract_stage_outputs(research_stages)
                 case.pipeline_stages = list(research_stages)
                 case.input_payload = persist_research_design(case.input_payload or {}, research_outputs)
@@ -828,130 +794,63 @@ async def _generate_survey_background(case_id: str, survey_id: str, body_dict: d
                     db, case, "research_design_completed", outcome="PERMIT", agent="G01-G08",
                     payload={"tools": RESEARCH_DESIGN_TOOLS, "completed": len(research_outputs)},
                 )
-                try:
-                    await db.commit()
-                except Exception:
-                    await db.rollback()
+                await db.commit()
 
-                # ── G09a: Diseño de preguntas ──────────────────────────────────────
-                _log.info("G09a starting for case %s", case_id)
-                try:
-                    res_a = await asyncio.wait_for(
-                        executor.run_tool("g09a_preguntas", context, {}), timeout=120.0
-                    )
-                except asyncio.TimeoutError:
-                    raise ValueError("G09a timeout: Gemini no respondió en 120s")
+                survey_stages = make_stage_list(SURVEY_TOOLS, start_id=len(research_stages))
+                stages = list(research_stages) + survey_stages
+                case.pipeline_stages = stages
+                flag_modified(case, "pipeline_stages")
+                await db.commit()
 
-                questions_out = res_a.get("output") or {}
-                model_used_a = res_a.get("model_used", "")
-                real_questions = questions_out.get("questions", [])
-
-                # Rechazar mocks y respuestas con <= 1 pregunta (mock tiene exactamente 1)
-                is_mock_or_error = (
-                    model_used_a.startswith("mock")
-                    or model_used_a.startswith("gemini-error")
-                    or len(real_questions) <= 1
+                _, stages = await run_tool_chain(
+                    executor,
+                    SURVEY_TOOLS,
+                    context,
+                    stages,
+                    stage_offset=len(research_stages),
+                    default_timeout=120.0,
                 )
-                if is_mock_or_error:
+                assert_pipeline_stages_ok(stages, RESEARCH_DESIGN_TOOLS + SURVEY_TOOLS)
+
+                questions_final = context.get("g09a_preguntas") or {}
+                branching_final = context.get("g09b_ramificacion")
+                validation = context.get("g09c_validacion") or {}
+                real_questions = questions_final.get("questions", []) if isinstance(questions_final, dict) else []
+                if len(real_questions) < 5:
                     raise ValueError(
-                        f"G09a retornó respuesta no válida "
-                        f"(model={model_used_a}, count={len(real_questions)}). "
-                        f"Activando fallback determinista."
+                        f"G09a produjo solo {len(real_questions)} preguntas; mínimo regulatorio: 5."
                     )
 
-                _log.info("G09a OK: %d preguntas generadas con %s", len(real_questions), model_used_a)
-                _write_evidence(db, case, "survey_questions_generated", outcome="PERMIT", agent="G09a",
-                               payload={"count": len(real_questions), "model": model_used_a})
-                try:
-                    await db.commit()
-                except Exception:
-                    await db.rollback()
+                case.pipeline_stages = list(stages)
+                flag_modified(case, "pipeline_stages")
+                _write_evidence(
+                    db,
+                    case,
+                    "survey_instrument_validated",
+                    outcome="PERMIT",
+                    agent="G09c",
+                    payload={
+                        "questions": len(real_questions),
+                        "validation": validation,
+                    },
+                )
 
-                # ── G09b: Ramificación ─────────────────────────────────────────────
-                context["g09a_preguntas"] = questions_out
-                _log.info("G09b starting for case %s", case_id)
-                try:
-                    res_b = await asyncio.wait_for(
-                        executor.run_tool("g09b_ramificacion", context, {}), timeout=60.0
-                    )
-                except asyncio.TimeoutError:
-                    # G09b timeout no es crítico — seguimos sin ramificación
-                    _log.warning("G09b timeout para case %s, continuando sin ramificación", case_id)
-                    res_b = {"output": {}}
-
-                branching_out = res_b.get("output") or {}
-                _write_evidence(db, case, "survey_branching_generated", outcome="PERMIT", agent="G09b")
-                try:
-                    await db.commit()
-                except Exception:
-                    await db.rollback()
-
-                # ── G09c: Validación ───────────────────────────────────────────────
-                context["g09b_ramificacion"] = branching_out
-                _log.info("G09c starting for case %s", case_id)
-                try:
-                    res_c = await asyncio.wait_for(
-                        executor.run_tool("g09c_validacion", context, {}), timeout=60.0
-                    )
-                except asyncio.TimeoutError:
-                    # G09c timeout no es crítico — el instrumento ya fue generado
-                    _log.warning("G09c timeout para case %s, instrumento aceptado sin certificado", case_id)
-                    res_c = {"output": {"irr_status": "APROBADO", "irr_alpha_estimated": 0.75}}
-
-                validation = res_c.get("output") or {}
-                _write_evidence(db, case, "survey_instrument_validated", outcome="PERMIT",
-                               agent="G09c", payload=validation)
-
-                questions_final = questions_out
-                branching_final = branching_out
-                _log.info("Pipeline G09a/b/c completado con Gemini para case %s", case_id)
+                survey.questions = questions_final
+                survey.branching = branching_final
+                survey.status = "open"
+                case.case_status = "survey_open"
+                await db.commit()
+                _log.info("Background survey generation COMPLETED for case_id=%s", case_id)
 
             except Exception as e:
-                error_log = str(e)
-
-            # ── FALLBACK DETERMINISTA GARANTIZADO ──────────────────────────────────
-            # Activa cuando Gemini falla, timeout, mock, o DB error.
-            # NUNCA deja el caso en "designing" para siempre.
-            if not questions_final or not questions_final.get("questions"):
-                roles = body_dict.get("roles") or ["executive", "operations", "technology"]
-                dimensions = body_dict.get("dimensions") or ["strategy", "process", "technology"]
-                domain = body_dict.get("domain") or "General"
-                hypotheses = [h for h in (body_dict.get("hypotheses") or []) if str(h).strip()]
-                questions_final = _generate_question_bank(roles, dimensions, domain, hypotheses)
-                branching_final = None
-                _write_evidence(db, case, "survey_fallback_activated", outcome="DENY",
-                               agent="G09", payload={
-                                   "error": error_log or "Gemini no disponible",
-                                   "questions_generated": len(questions_final.get("questions", [])),
-                                   "note": "Instrumento determinista ARHIAX aplicado"
-                               })
-
-            # ── Persistir resultado final — commit protegido ──────────────────────
-            survey.questions = questions_final
-            survey.branching = branching_final
-            survey.status = "open"
-            case.case_status = "survey_open"
-
-            try:
-                await db.commit()
-                _log.info(f"Background survey generation COMPLETED for case_id={case_id}")
-            except Exception as commit_err:
-                _log.error(f"First commit failed: {commit_err}")
+                _log.error("Survey pipeline failed for %s: %s", case_id, e)
                 await db.rollback()
-                # Ultimo recurso: sesion completamente nueva
-                try:
-                    async_session_factory2 = get_async_session_local()
-                    async with async_session_factory2() as db2:
-                        case2 = await db2.get(ProCase, case_id)
-                        survey2 = await db2.get(ProSurveySession, survey_id)
-                        if case2 and survey2:
-                            case2.case_status = "survey_open"
-                            survey2.status = "open"
-                            survey2.questions = questions_final
-                            survey2.branching = branching_final
-                            await db2.commit()
-                except Exception:
-                    pass  # Loguear en nivel de FastAPI
+                case = await db.get(ProCase, case_id)
+                survey = await db.get(ProSurveySession, survey_id)
+                if case and survey:
+                    await _mark_case_pipeline_error(db, case, survey, str(e), agent="G09")
+                    await db.commit()
+
     except Exception as fatal_err:
         print(f"[PANIC-LOG] FATAL ERROR in background task: {fatal_err}")
         import traceback
@@ -1038,6 +937,8 @@ async def approve_case(
     case = result.scalar_one_or_none()
     if not case:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
+
+    _block_if_pipeline_compromised(case, body.action)
 
     if body.action == "publish":
         grammar_report = _ensure_case_grammar_report(case)
@@ -1186,10 +1087,23 @@ async def generate_deliverables(
     if not case:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
 
+    _block_if_pipeline_compromised(case, "generar entregables")
+
     if case.case_status not in ("approved", "published"):
         raise HTTPException(status_code=403, detail="Los entregables solo se generan después de aprobación HIL.")
 
     from api.pipeline.pro_markdown_builder import build_pro_markdown
+    from api.pipeline.pro_report_data import build_pro_report_data, validate_report_for_deliverables
+    report_data = build_pro_report_data(case)
+    report_gaps = validate_report_for_deliverables(report_data, case)
+    if report_gaps:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "No se pueden generar entregables: faltan datos reales del pipeline.",
+                "missing_sections": report_gaps,
+            },
+        )
     md = build_pro_markdown(case)
     grammar_report = lint_markdown(md, source=f"pro_case:{case.case_id}", audience="executive")
     decision = grammar_report.get("publish_decision") or {}

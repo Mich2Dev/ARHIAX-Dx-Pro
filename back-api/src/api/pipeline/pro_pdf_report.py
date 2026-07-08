@@ -9,12 +9,11 @@ import xml.sax.saxutils as _xml
 from datetime import datetime
 from typing import Any
 
-from api.pipeline.pro_report_data import build_pro_report_data
+from api.pipeline.pro_report_data import build_pro_report_data, validate_report_for_deliverables
 from api.pipeline.pro_pdf_charts import (
     bottleneck_chart,
     delta_sigma_bars,
     dimension_radar,
-    qa_gauge,
     role_bar_chart,
     triangulation_flow,
 )
@@ -51,7 +50,7 @@ try:
     MY_T = 1.55 * cm
     MY_B = 1.05 * cm
     CW = W - 2 * MX
-    GAP = 0.12 * cm
+    GAP = 0.22 * cm
 except ImportError:
     PDF_OK = False
 
@@ -118,8 +117,8 @@ def _styles() -> dict:
     return {
         "h1": ParagraphStyle("h1", fontSize=13, textColor=C_NAVY, fontName="Helvetica-Bold",
                               spaceAfter=4, leading=16),
-        "h2": ParagraphStyle("h2", fontSize=10.5, textColor=C_NAVY, fontName="Helvetica-Bold",
-                              spaceBefore=5, spaceAfter=4, leading=14),
+        "h2": ParagraphStyle("h2", fontSize=11.5, textColor=C_NAVY, fontName="Helvetica-Bold",
+                              spaceBefore=12, spaceAfter=6, leading=14),
         "h3": ParagraphStyle("h3", fontSize=9.5, textColor=C_ACCENT, fontName="Helvetica-Bold",
                               spaceBefore=3, spaceAfter=3, leading=12),
         "body": ParagraphStyle("body", fontSize=10, textColor=C_INK, leading=13,
@@ -129,7 +128,7 @@ def _styles() -> dict:
         "small": ParagraphStyle("small", fontSize=9, textColor=C_GRAY, leading=12,
                                 wordWrap="LTR", splitLongWords=True),
         "guide": ParagraphStyle("guide", fontSize=9, textColor=C_NAVY_LT, leading=12,
-                                alignment=TA_JUSTIFY, spaceAfter=3),
+                                alignment=TA_JUSTIFY, spaceBefore=4, spaceAfter=6),
         "cell": ParagraphStyle(
             "cell", fontSize=9, textColor=C_INK, leading=12,
             wordWrap="LTR", splitLongWords=True,
@@ -158,9 +157,10 @@ def _styles() -> dict:
         "part_sub": ParagraphStyle("part_sub", fontSize=8.5, textColor=C_OFFWH, leading=11),
         "sec_num": ParagraphStyle("sec_num", fontSize=10, textColor=C_PAPER, fontName="Helvetica-Bold",
                                    alignment=TA_CENTER, leading=12),
-        "sec_title": ParagraphStyle("sec_title", fontSize=11, textColor=C_NAVY, fontName="Helvetica-Bold",
-                                      leading=14),
-        "sec_sub": ParagraphStyle("sec_sub", fontSize=8.5, textColor=C_GRAY, leading=11),
+        "sec_title": ParagraphStyle("sec_title", fontSize=12.5, textColor=C_NAVY, fontName="Helvetica-Bold",
+                                      leading=15),
+        "sec_sub": ParagraphStyle("sec_sub", fontSize=8.5, textColor=C_ACCENT, leading=11,
+                                    fontName="Helvetica-Oblique"),
     }
 
 
@@ -188,8 +188,8 @@ def _simple_table(rows: list, widths: list, *, grid: bool = True) -> Table:
     t = Table(rows, colWidths=_fit_widths(widths), splitByRow=1)
     style = [
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ("LEFTPADDING", (0, 0), (-1, -1), 4),
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
     ]
@@ -212,8 +212,8 @@ def _hdr_table(rows: list, widths: list) -> Table:
         ("GRID", (0, 0), (-1, -1), 0.4, C_BORDER),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_PAPER, C_OFFWH]),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
         ("LEFTPADDING", (0, 0), (-1, -1), 5),
         ("RIGHTPADDING", (0, 0), (-1, -1), 5),
     ]))
@@ -258,27 +258,42 @@ def _prose(data: dict, key: str, s: dict) -> list:
 
 
 def _part_divider(part: str, title: str, subtitle: str, s: dict, *, first: bool = False) -> list:
-    """Franja compacta de parte — no ocupa media página."""
+    """Franja de parte — título y subtítulo DENTRO de la banda navy (sin texto fantasma)."""
     out: list = []
     if not first:
         out.append(PageBreak())
-    stripe = Table(
-        [[Paragraph(f"PARTE {part}", s["part_lbl"]),
+    title_row = Table(
+        [[Paragraph(f"PARTE&nbsp;{part}", s["part_lbl"]),
           Paragraph(_esc_html(title), s["part_t"])]],
-        colWidths=[2.0 * cm, CW - 2.0 * cm],
+        colWidths=[2.5 * cm, CW - 2.5 * cm],
     )
-    stripe.setStyle(TableStyle([
+    title_row.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    rows = [[title_row]]
+    if subtitle:
+        rows.append([Paragraph(_esc_html(subtitle), s["part_sub"])])
+    stripe = Table(rows, colWidths=[CW])
+    band_style = [
         ("BACKGROUND", (0, 0), (-1, -1), C_NAVY),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-    ]))
-    out.append(stripe)
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, 0), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 2 if subtitle else 8),
+    ]
     if subtitle:
-        out.append(_p(subtitle, s["part_sub"]))
-    out.append(Spacer(1, GAP * 1.2))
+        band_style += [
+            ("TOPPADDING", (0, 1), (-1, 1), 0),
+            ("BOTTOMPADDING", (0, 1), (-1, 1), 8),
+        ]
+    stripe.setStyle(TableStyle(band_style))
+    out.append(stripe)
+    out.append(Spacer(1, GAP * 3))
     return out
 
 
@@ -338,7 +353,7 @@ def _section_hdr(sec_id: str, title: str, subtitle: str, s: dict) -> list:
     row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     sep = Table([[""]], colWidths=[CW], rowHeights=[1])
     sep.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.8, C_ACCENT)]))
-    return [row, sep, Spacer(1, GAP)]
+    return [row, sep, Spacer(1, GAP * 2)]
 
 
 def _band(title: str, subtitle: str, s: dict) -> list:
@@ -436,10 +451,12 @@ def _sec_index(data: dict, s: dict) -> list:
     content: list = []
     content.append(_p("<b>Contenido del informe</b>", s["h2"]))
     toc_rows = []
+    part_row_idx: list[int] = []
     for part in outline:
+        part_row_idx.append(len(toc_rows))
         toc_rows.append([
-            _p(f"PARTE {part['part']}", s["toc_sec"]),
-            _p(part["title"], s["toc_sec"]),
+            Paragraph("&nbsp;", s["toc"]),
+            _p(f"PARTE {part['part']} — {part['title']}", s["toc_sec"]),
         ])
         for sec in part.get("sections") or []:
             toc_rows.append([
@@ -447,7 +464,13 @@ def _sec_index(data: dict, s: dict) -> list:
                 _p(sec["title"], s["toc"]),
             ])
     toc_t = _simple_table(toc_rows, _cols_fixed_flex([1.3 * cm], [1]), grid=False)
-    toc_t.setStyle(TableStyle([("LEFTPADDING", (0, 1), (-1, -1), 8)]))
+    toc_style = [("LEFTPADDING", (0, 1), (-1, -1), 8),
+                 ("TOPPADDING", (0, 0), (-1, -1), 3),
+                 ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]
+    for idx in part_row_idx:
+        toc_style.append(("TOPPADDING", (0, idx), (-1, idx), 7))
+        toc_style.append(("LINEBELOW", (0, idx), (-1, idx), 0.4, C_BORDER))
+    toc_t.setStyle(TableStyle(toc_style))
     content.append(toc_t)
     return _section("1.0", "Indice general", "Estructura del informe por partes y secciones", content, s)
 
@@ -550,7 +573,7 @@ def _sec_triangulation(data: dict, s: dict) -> list:
     content: list = []
     content += _guide(guides.get("triangulation", ""), s)
     content += _prose(data, "triangulation", s)
-    flow = triangulation_flow(CW, 52)
+    flow = triangulation_flow(CW, 66)
     if flow:
         content.append(_gfx(flow))
     content.append(Spacer(1, GAP))
@@ -558,13 +581,13 @@ def _sec_triangulation(data: dict, s: dict) -> list:
     role_scores = scoring.get("role_scores") or {}
     gap_pairs = (scoring.get("delta_sigma") or {}).get("gap_pairs") or tri.get("gap_pairs") or []
     rb = role_bar_chart(role_scores, CW, 78)
-    db = delta_sigma_bars(gap_pairs, CW, 78)
+    db = delta_sigma_bars(gap_pairs, CW)
     if rb:
         content.append(_gfx(rb))
         content.append(Spacer(1, GAP))
     if db:
         content.append(_gfx(db))
-        content.append(Spacer(1, GAP))
+        content.append(Spacer(1, GAP * 2))
 
     max_d = tri.get("max_delta_sigma") or (scoring.get("delta_sigma") or {}).get("max_gap")
     if max_d:
@@ -574,7 +597,7 @@ def _sec_triangulation(data: dict, s: dict) -> list:
             + ("BRECHA CRÍTICA: la dirección y operación perciben capacidades de forma incompatible. "
                "Acción: alinear KPIs antes de nuevas inversiones.")
             if float(max_d) > 2 else "dentro de rango aceptable de alineamiento",
-            ParagraphStyle("dg", parent=s["body"], textColor=col),
+            ParagraphStyle("dg", parent=s["body"], textColor=col, spaceBefore=6),
         ))
 
     content.append(Spacer(1, GAP))
@@ -765,12 +788,13 @@ def _sec_process(data: dict, s: dict) -> list:
                _th("Crítica", s), _th("Cuello", s), _th("Notas / evidencia", s)]]
         for a in asis["activities"][:10]:
             if isinstance(a, dict):
+                note = _safe(a.get("notes"), "—")
                 ar.append([
                     _p(a.get("name"), s["cell"]),
                     _p(a.get("lane"), s["cell"]),
                     _p("Sí" if a.get("is_critical") else "No", s["cell"]),
                     _p("Sí" if a.get("is_bottleneck") else "No", s["cell"]),
-                    _p(a.get("notes", ""), s["cell"]),
+                    _p(note, s["cell"]),
                 ])
         content.append(_hdr_table(ar, _cols_fracs(1.4, 0.7, 0.45, 0.45, 2.2)))
 
@@ -821,6 +845,18 @@ def _sec_matrix(data: dict, s: dict) -> list:
     return _section("4.2", "Matriz AS-IS -> TO-BE", "Componentes, brechas e impacto economico", content, s)
 
 
+def _fmt_cell(val: Any) -> str:
+    """Formatea listas/dicts para celdas legibles (no repr Python)."""
+    if val is None:
+        return "—"
+    if isinstance(val, list):
+        parts = [_safe(x) for x in val if x and str(x).strip() not in ("", "—")]
+        return "; ".join(parts) if parts else "—"
+    if isinstance(val, dict):
+        return _safe(val.get("summary") or val.get("text") or str(val))
+    return _safe(val)
+
+
 def _sec_findings(data: dict, s: dict) -> list:
     guides = data.get("section_guides") or {}
     find = data.get("findings") or {}
@@ -836,7 +872,7 @@ def _sec_findings(data: dict, s: dict) -> list:
         if isinstance(f, dict):
             rows.append([
                 _p(f.get("finding") or f.get("name"), s["cell"]),
-                _p(f.get("evidence") or f.get("source"), s["cell"]),
+                _p(_fmt_cell(f.get("evidence") or f.get("source")), s["cell"]),
                 _p(f.get("priority") or f.get("severity"), s["cell"]),
                 _p(f.get("treatment") or f.get("recommendation"), s["cell"]),
             ])
@@ -860,11 +896,12 @@ def _sec_findings(data: dict, s: dict) -> list:
             f"<b>Pérdida de oportunidad total estimada: USD {bott['total_loss_usd']:,}/mes</b> "
             f"(USD {int(bott['total_loss_usd']) * 12:,}/año). "
             "Esta cifra representa el costo de no intervenir en los cuellos identificados.",
-            ParagraphStyle("loss", parent=s["body"], textColor=C_RED, fontName="Helvetica-Bold"),
+            ParagraphStyle("loss", parent=s["body"], textColor=C_RED, fontName="Helvetica-Bold",
+                           spaceBefore=4, spaceAfter=6),
         ))
-    bc = bottleneck_chart(bott.get("items") or [], CW, 70)
+    bc = bottleneck_chart(bott.get("items") or [], CW)
     if bc:
-        content.append(Spacer(1, GAP))
+        content.append(Spacer(1, GAP * 2))
         content.append(_gfx(bc))
     return _section("4.3", "Hallazgos y cuellos", "Priorizacion por severidad y costo USD/mes", content, s)
 
@@ -899,19 +936,23 @@ def _sec_roadmap(data: dict, s: dict) -> list:
     content += _guide(guides.get("roadmap", ""), s)
     content += _prose(data, "roadmap", s)
     rows = [[
-        _th("Horizonte", s), _th("Acciones", s),
-        _th("Responsable", s), _th("KPI de éxito", s),
+        _th("Horizonte", s), _th("Acciones", s), _th("Resultado esperado", s),
     ]]
     for r in data.get("roadmap") or []:
         if isinstance(r, dict):
             rows.append([
                 _p(r.get("phase"), s["cell_b"]),
                 _p(r.get("content"), s["cell"]),
-                _p(r.get("owner", "—"), s["cell"]),
-                _p(r.get("kpi", "—"), s["cell"]),
+                _p(r.get("kpi") or r.get("owner"), s["cell"]),
             ])
-    content.append(_hdr_table(rows, _cols_fracs(0.85, 3.0, 1.0, 1.0)))
-    return _section("5.1", "Roadmap de implementacion", "Secuencia 30 / 90 / 180 / 365 dias", content, s)
+    content.append(_hdr_table(rows, _cols_fracs(1.1, 3.0, 1.7)))
+    next_steps = data.get("next_steps") or []
+    if next_steps:
+        content.append(Spacer(1, GAP))
+        content.append(_p("<b>Próximos pasos inmediatos</b>", s["h2"]))
+        for step in next_steps:
+            content.append(_p(f"• {step}", s["body"]))
+    return _section("5.1", "Roadmap de implementacion", "Secuencia 90 / 180 / 365 dias y proximos pasos", content, s)
 
 
 def _sec_psychometrics(data: dict, s: dict) -> list:
@@ -921,21 +962,21 @@ def _sec_psychometrics(data: dict, s: dict) -> list:
     content: list = []
     content += _guide(guides.get("psychometrics", ""), s)
     content += _prose(data, "psychometrics", s)
-    cron = psy.get("cronbach") or psy.get("cronbach_alpha_overall") or "0.82"
-    irr = psy.get("irr") or "0.82"
+    cron = psy.get("cronbach") or psy.get("cronbach_alpha_overall") or "—"
+    irr = psy.get("irr") or "—"
     content.append(_kpi_strip([
         ("α Cronbach", "", cron),
         ("IRR Krippendorff", "", irr),
         ("QA G14", "", data.get("governance", {}).get("qa_score", "—")),
         ("Confirmadas", "", len(bay.get("confirmed") or [])),
     ], s))
-    content.append(Spacer(1, GAP))
-    content.append(_p(
-        f"α Cronbach = {cron}: consistencia interna del instrumento. "
-        f"IRR Krippendorff = {irr}: acuerdo inter-evaluador entre roles. "
-        "Valores >0.80 indican fiabilidad ALTA para decisiones estratégicas.",
-        s["body"],
-    ))
+    if cron != "—" or irr != "—":
+        content.append(_p(
+            f"α Cronbach = {cron}: consistencia interna del instrumento. "
+            f"IRR Krippendorff = {irr}: acuerdo inter-evaluador entre roles. "
+            "Valores >0.80 indican fiabilidad ALTA para decisiones estratégicas.",
+            s["body"],
+        ))
     if bay.get("summary") and not str(bay.get("summary", "")).lower().startswith("mock"):
         content.append(_p(bay["summary"], s["body"]))
     content.append(Spacer(1, GAP))
@@ -948,11 +989,16 @@ def _sec_psychometrics(data: dict, s: dict) -> list:
         content.append(_p(f"✗ <b>Rechazada:</b> {label}", ParagraphStyle("no", parent=s["body"], textColor=C_RED)))
     qa = data.get("governance", {}).get("qa_score")
     if qa is not None:
-        g = qa_gauge(float(qa), 95, 55)
-        if g:
+        try:
+            qa_val = float(qa)
+            estado = "supera el umbral" if qa_val >= 85 else "por debajo del umbral"
             content.append(Spacer(1, GAP))
-            content.append(_gfx(g))
-            content.append(_p(f"Control de calidad G14: {qa}/100 — umbral mínimo para publicación: 85", s["small"]))
+            content.append(_p(
+                f"<b>Control de calidad G14:</b> {qa}/100 — {estado} mínimo de publicación (85).",
+                s["small"],
+            ))
+        except (TypeError, ValueError):
+            pass
     return _section("2.4", "Psicometria, IRR y bayesiano", "Validez del instrumento y hipotesis", content, s)
 
 
@@ -1022,6 +1068,12 @@ def build_pro_pdf_dense(case: Any, evidence: list | None = None) -> bytes:
         raise RuntimeError("reportlab no instalado")
 
     data = build_pro_report_data(case)
+    missing = validate_report_for_deliverables(data, case)
+    if missing:
+        raise RuntimeError(
+            "Informe incompleto — no se genera PDF sin datos reales del pipeline: "
+            + "; ".join(missing)
+        )
     s = _styles()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(

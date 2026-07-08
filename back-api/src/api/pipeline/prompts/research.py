@@ -11,6 +11,7 @@ CONTEXTO:
 - Subproceso: {subprocess}
 - Síntoma: {objective}
 - Configuración: {g02_configurador}
+- Contexto operativo: {operational_context}
 
 INSTRUCCIONES:
 1. Identifica 5-8 fuentes académicas relevantes (artículos, estudios, meta-análisis).
@@ -48,6 +49,7 @@ CONTEXTO:
 - Sector: {domain}
 - Subproceso: {subprocess}
 - Literatura científica: {g03_cienciometro}
+- Contexto operativo: {operational_context}
 
 INSTRUCCIONES:
 1. Mapea 3-5 casos empresariales reales de organizaciones similares.

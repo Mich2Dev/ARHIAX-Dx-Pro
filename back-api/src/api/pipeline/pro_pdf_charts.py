@@ -81,83 +81,134 @@ def dimension_radar(dim_scores: list, width: float = 220, height: float = 160) -
     return d
 
 
-def delta_sigma_bars(gap_pairs: list, width: float = 460, height: float = 120) -> Drawing | None:
+def delta_sigma_bars(gap_pairs: list, width: float = 460, height: float = 0) -> Drawing | None:
+    """Barras horizontales δσ — etiqueta arriba, barra abajo, valor a la derecha.
+    El color codifica severidad relativa a la mayor brecha del set (sin umbrales fijos)."""
     if not CHARTS_OK or not gap_pairs:
         return None
+    items = [g for g in gap_pairs[:6] if isinstance(g, dict)]
+    if not items:
+        return None
+
+    ml, mr, mt, mb = 12, 78, 20, 12
+    bar_h, label_h, row_gap = 13, 11, 15
+    row_h = label_h + bar_h + row_gap
+    n = len(items)
+    calc_h = mt + n * row_h + mb
+    height = max(height, calc_h) if height > 0 else calc_h
+
     d = Drawing(width, height)
     d.add(Rect(0, 0, width, height, fillColor=_hex(C_PAPER), strokeColor=_hex(C_BORDER), strokeWidth=0.5))
-    items = gap_pairs[:6]
-    bar_h = 14
-    y = height - 18
-    for g in items:
-        if not isinstance(g, dict):
-            continue
-        delta = float(g.get("delta", 0) or 0)
-        label = f"{g.get('roles', '')} · {g.get('dimension', '')}"[:38]
-        bw = min(width - 120, delta / 3.5 * (width - 120))
-        col = _hex(C_RED) if g.get("critical") or delta > 2 else _hex(C_ACCENT)
-        d.add(String(6, y - 2, label, fontSize=7.5, fillColor=_hex(C_NAVY)))
-        d.add(Rect(6, y - bar_h - 4, max(bw, 4), bar_h, fillColor=col, strokeWidth=0))
-        d.add(String(6 + max(bw, 4) + 4, y - bar_h, f"δσ={delta:.2f}", fontSize=8, fillColor=_hex(C_NAVY)))
-        y -= bar_h + 10
-        if y < 10:
-            break
-    d.add(Line(width - 70, 8, width - 8, 8, strokeColor=_hex(C_RED), strokeWidth=1))
-    d.add(String(width - 70, 12, "umbral 2.0", fontSize=6, fillColor=_hex(C_RED)))
+    d.add(String(ml, height - 9, "Brechas de percepcion entre roles por dimension (delta-sigma)",
+                 fontSize=7.5, fillColor=_hex(C_GRAY)))
+
+    bar_area_w = width - ml - mr
+    deltas = [abs(float(g.get("delta", 0) or 0)) for g in items]
+    max_delta = max(deltas) or 1.0
+
+    y = height - mt - label_h
+    for g, delta in zip(items, deltas):
+        label = f"{g.get('roles', '')} · {g.get('dimension', '')}".strip(" ·")[:48]
+        frac = delta / max_delta
+        bw = max(6, frac * bar_area_w)
+        # Severidad relativa: mayor brecha = navy intenso; menores = acento suave.
+        if g.get("critical") or frac >= 0.85:
+            col = _hex(C_NAVY)
+        elif frac >= 0.5:
+            col = _hex(C_ACCENT)
+        else:
+            col = _hex("#c4b79c")
+
+        d.add(String(ml, y + 2, label, fontSize=7, fillColor=_hex(C_NAVY)))
+        bar_y = y - bar_h
+        d.add(Rect(ml, bar_y, bw, bar_h, fillColor=col, strokeColor=None, strokeWidth=0))
+        d.add(String(ml + bw + 5, bar_y + 3, f"{delta:.1f}",
+                     fontSize=7.5, fillColor=_hex(C_NAVY)))
+        y = bar_y - row_gap
+
+    # Eje base sutil
+    d.add(Line(ml, mb, ml, height - mt - 2, strokeColor=_hex(C_BORDER), strokeWidth=0.5))
     return d
 
 
-def bottleneck_chart(bottlenecks: list, width: float = 460, height: float = 110) -> Drawing | None:
+def bottleneck_chart(bottlenecks: list, width: float = 460, height: float = 0) -> Drawing | None:
+    """Barras de impacto — etiqueta arriba, barra abajo, costo a la derecha."""
     if not CHARTS_OK or not bottlenecks:
         return None
+    items = [b for b in bottlenecks[:5] if isinstance(b, dict)]
+    if not items:
+        return None
+
+    ml, mr, mt, mb = 10, 90, 16, 10
+    bar_h, label_h, row_gap = 16, 14, 14
+    row_h = label_h + bar_h + row_gap
+    n = len(items)
+    calc_h = mt + n * row_h + mb
+    height = max(height, calc_h) if height > 0 else calc_h
+
     d = Drawing(width, height)
     d.add(Rect(0, 0, width, height, fillColor=_hex(C_PAPER), strokeColor=_hex(C_BORDER), strokeWidth=0.5))
-    items = bottlenecks[:5]
-    bar_h = 16
-    y = height - 20
-    max_imp = max(float(b.get("impact_score", 5) or 5) for b in items if isinstance(b, dict)) or 10
+    d.add(String(ml, height - 8, "Impacto estimado por cuello de botella",
+                 fontSize=7.5, fillColor=_hex(C_GRAY)))
+
+    bar_area_w = width - ml - mr
+    max_imp = max(float(b.get("impact_score", 5) or 5) for b in items) or 10
+
+    y = height - mt - label_h
     for b in items:
-        if not isinstance(b, dict):
-            continue
         imp = float(b.get("impact_score", 5) or 5)
-        name = str(b.get("name", "Cuello"))[:32]
-        bw = (imp / max_imp) * (width - 100)
-        d.add(String(6, y - 2, name, fontSize=6.5, fillColor=_hex(C_NAVY)))
-        d.add(Rect(6, y - bar_h - 4, max(bw, 6), bar_h, fillColor=_hex(C_NAVY), strokeWidth=0))
+        name = str(b.get("name", "Cuello"))
+        bw = max(10, (imp / max_imp) * bar_area_w)
         cost = b.get("estimated_cost_usd_month")
-        extra = f" ${cost}/mes" if cost else f" impacto {imp:.0f}"
-        d.add(String(6 + max(bw, 6) + 4, y - bar_h, extra, fontSize=6.5, fillColor=_hex(C_GRAY)))
-        y -= bar_h + 8
-        if y < 8:
-            break
+        extra = f"${cost:,}/mes" if cost else f"impacto {imp:.0f}"
+
+        # Etiqueta en hasta 2 líneas si es larga
+        if len(name) > 38:
+            sp = name.rfind(" ", 0, 38)
+            if sp < 8:
+                sp = 38
+            lines = [name[:sp], name[sp + 1:]]
+            d.add(String(ml, y + 8, lines[0], fontSize=6.5, fillColor=_hex(C_NAVY)))
+            d.add(String(ml, y - 1, lines[1][:42], fontSize=6.5, fillColor=_hex(C_NAVY)))
+            bar_y = y - bar_h - 4
+        else:
+            d.add(String(ml, y + 2, name, fontSize=7, fillColor=_hex(C_NAVY)))
+            bar_y = y - bar_h
+        d.add(Rect(ml, bar_y, bw, bar_h, fillColor=_hex(C_NAVY), strokeWidth=0))
+        d.add(String(ml + bw + 6, bar_y + 4, extra, fontSize=7, fillColor=_hex(C_GRAY)))
+        y = bar_y - row_gap
     return d
 
 
-def triangulation_flow(width: float = 460, height: float = 72) -> Drawing | None:
+def triangulation_flow(width: float = 460, height: float = 66) -> Drawing | None:
     """Diagrama: DDF → Encuesta → Bayesiano → Veredicto."""
     if not CHARTS_OK:
         return None
     d = Drawing(width, height)
     steps = ["DDF", "Multi-Rater", "δσ + Psico", "Bayesiano", "Veredicto"]
     n = len(steps)
-    gap = 5
+    gap = 6
     box_w = max(48, (width - 20 - gap * (n - 1)) / n)
-    y = 20
-    bh = 32
-    fs = 6 if box_w >= 72 else 5.5
+    fs = 7 if box_w >= 72 else 6
+    # Título arriba; cajas centradas en la franja inferior (sin solaparse).
+    title_h = 14
+    bh = 28
+    y = max(6, (height - title_h - bh) / 2)
+    d.add(String(10, height - 10, "Modelo de triangulacion ARHIAX Dx",
+                 fontSize=7.5, fillColor=_hex(C_GRAY)))
     for i, step in enumerate(steps):
         x = 10 + i * (box_w + gap)
         col = _hex(C_NAVY) if i < n - 1 else _hex(C_ACCENT)
+        cyl = y + bh / 2
         d.add(Rect(x, y, box_w, bh, fillColor=_hex(C_PAPER), strokeColor=col, strokeWidth=1))
-        d.add(String(x + box_w / 2, y + bh / 2 - 2, step[:16], fontSize=fs,
+        d.add(String(x + box_w / 2, cyl - 2.5, step[:16], fontSize=fs,
                      fillColor=_hex(C_NAVY), textAnchor="middle"))
         if i < n - 1:
             ax = x + box_w + 1
-            d.add(Line(ax, y + bh / 2, ax + gap - 2, y + bh / 2,
+            d.add(Line(ax, cyl, ax + gap - 2, cyl,
                        strokeColor=_hex(C_ACCENT), strokeWidth=1))
-            d.add(Polygon([ax + gap - 2, y + bh / 2, ax, y + bh / 2 - 2, ax, y + bh / 2 + 2],
+            d.add(Polygon([ax + gap - 2, cyl, ax, cyl - 2, ax, cyl + 2],
                           fillColor=_hex(C_ACCENT)))
-    d.add(String(10, height - 8, "Modelo de triangulacion ARHIAX Dx", fontSize=7, fillColor=_hex(C_GRAY)))
     return d
 
 

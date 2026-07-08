@@ -76,7 +76,7 @@ El build usa el `Dockerfile` de la raíz. Cloud Build empaqueta todo el monorepo
 |----------|-------------|
 | `DATABASE_URL` | Postgres vía socket Cloud SQL (`postgresql+asyncpg://...`) — ya configurada en el servicio |
 | `APP_URL` | URL pública para enlaces de encuesta |
-| `GEMINI_API_KEY` | LLM para pipeline G03–G08 (opcional; sin llave usa contenido mock) |
+| `GEMINI_API_KEY` | **Obligatoria** — sin llave el pipeline no ejecuta (fail-closed, sin mock) |
 | `ANTHROPIC_API_KEY` | LLM alternativo si aplica |
 
 > **Cold start:** tras un deploy nuevo el contenedor tarda ~30–45 s en levantar todos los servicios. Si el login falla al primer intento, espera y recarga.
@@ -270,7 +270,7 @@ Ver `.env.example` en la raíz y `back-api/.env.example`. Las más relevantes:
 |----------|---------------|-------------|
 | `DATABASE_URL` | Postgres en Docker (`5435`) | Conexión async SQLAlchemy |
 | `REDIS_URL` | `redis://redis:6379/0` | Cola del worker |
-| `GEMINI_API_KEY` | — | LLM para agentes del pipeline |
+| `GEMINI_API_KEY` | **Obligatoria** | LLM para todas las etapas G01–G14 |
 | `APP_URL` | `http://localhost:3001` | Base URL para links de encuesta |
 | `SECRET_KEY` | dev secret | JWT auth |
 
@@ -289,6 +289,24 @@ Ver `.env.example` en la raíz y `back-api/.env.example`. Las más relevantes:
 ```bash
 git push marcelofork dev    # Mich2Dev
 git push marcelo dev        # Marcelo7225 (si tienes acceso)
+```
+
+---
+
+## Política regulatoria: fail-closed (sin mock)
+
+El pipeline **nunca** genera contenido simulado. Si el LLM no está disponible o falla:
+
+1. La etapa queda en `failed` y el caso pasa a `error`
+2. **No** se activan fallbacks deterministas ni placeholders
+3. **No** se puede aprobar (HIL) ni generar PDF con etapas fallidas
+4. Queda evidencia `pipeline_failed` con `policy: fail_closed_no_mock`
+
+**Requisito:** `GEMINI_API_KEY` configurada en `.env` (local) o Cloud Run (producción).
+
+```bash
+curl http://localhost:8000/healthz
+# → {"status":"ok","llm_configured":true,"policy":"fail_closed_no_mock"}
 ```
 
 ---

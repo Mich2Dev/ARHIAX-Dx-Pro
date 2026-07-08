@@ -16,7 +16,9 @@ import httpx
 
 API = "http://localhost:8000"
 FRONT = "http://localhost:3001"
-OUT = Path(__file__).resolve().parents[2] / "exports" / "caso_completo"
+OUT = Path(__file__).resolve().parent.parent / "exports" / "caso_completo"
+if not OUT.parent.exists():
+    OUT = Path("/app/exports/caso_completo")
 EMAIL = "admin@arhiax.com"
 PASSWORD = "arhiax-admin-2026"
 
@@ -47,8 +49,8 @@ def create_case(client: httpx.Client) -> dict:
     payload = {
         "consent": {"action": "ingest_to_llm", "consents": {"T1": True, "T3": True}},
         "engagement_id": f"eng-{int(time.time())}",
-        "client_name": "Manufactura del Pacífico S.A.S.",
-        "domain": "Manufactura y planificación de producción",
+        "client_name": "Tecnología Andina Ltda.",
+        "domain": "Servicios de tecnología y soporte TI",
         "roles": ["executive", "operations", "technology"],
         "dimensions": ["strategy", "process", "technology", "governance"],
         "hypotheses": [],
@@ -297,24 +299,14 @@ def generate_and_download(client: httpx.Client, case_id: str, case_ref: str, cli
 
 
 def main() -> int:
-    import os
-    resume_id = os.environ.get("CASE_ID", "").strip()
     print("=" * 60)
     print("FLUJO COMPLETO USUARIO - ARHIAX Dx Pro")
     print("=" * 60)
     with httpx.Client(timeout=120.0) as client:
         login(client)
-        if resume_id:
-            log("R", f"Reanudando caso existente {resume_id}")
-            r = client.get(f"{API}/pro/cases/{resume_id}", timeout=30)
-            r.raise_for_status()
-            case = r.json()
-            case_id = case["id"]
-            case_data = case if case.get("case_status") == "survey_open" else wait_survey_open(client, case_id)
-        else:
-            case = create_case(client)
-            case_id = case["id"]
-            case_data = wait_survey_open(client, case_id)
+        case = create_case(client)
+        case_id = case["id"]
+        case_data = wait_survey_open(client, case_id)
         fill_survey(client, case_data)
         run_diagnostic(client, case_id)
         case_final = wait_review(client, case_id)

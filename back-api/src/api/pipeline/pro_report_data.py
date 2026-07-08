@@ -91,167 +91,264 @@ def _is_stub_text(value: Any) -> bool:
     return len(text) < 25 and text.lower().endswith("validado")
 
 
-def _synthesize_executive(case: Any, paquete: list, scoring: dict, g11a: dict, extra: dict) -> str:
-    score = scoring.get("overall_score", scoring.get("scoring_summary", {}).get("overall_score", "—"))
-    parts = [
-        (
-            f"{case.client_name} alcanza un índice de madurez de {score}/100 en el dominio "
-            f"«{case.domain}», con evidencia multi-rater de {scoring.get('total_responses', 3)} perfiles."
-        ),
-    ]
+def _derive_executive(case: Any, paquete: list, scoring: dict, g11a: dict, extra: dict, g13: dict) -> str:
+    """Tesis ejecutiva solo con datos reales: encuesta, intake, bayesiano o redactor."""
+    if g13.get("executive_summary") and not _is_stub_text(g13.get("executive_summary")):
+        return str(g13["executive_summary"]).strip()
+    parts: list[str] = []
+    score = scoring.get("overall_score")
+    responses = scoring.get("total_responses")
+    if score is not None:
+        parts.append(
+            f"{case.client_name} registra madurez {score}/100 en «{case.domain}»"
+            + (f" con {responses} respuestas multi-rater." if responses else ".")
+        )
     symptom = extra.get("symptom")
     if symptom:
-        parts.append(symptom)
+        parts.append(str(symptom).strip())
     delta = scoring.get("delta_sigma") or {}
-    if delta.get("max_gap"):
+    if delta.get("max_gap") is not None:
         parts.append(
-            f"Se detecta brecha crítica de percepción δσ={float(delta['max_gap']):.1f} entre roles "
-            f"(dirección vs operación), coherente con las hipótesis del intake DDF."
+            f"Brecha de percepción δσ={float(delta['max_gap']):.2f} entre roles medidos en encuesta."
         )
     for h in paquete[:2]:
         if isinstance(h, dict) and h.get("enunciado"):
-            hid = h.get("hipotesis_id") or "H"
-            parts.append(f"{hid}: {h['enunciado'][:180]}")
+            hid = h.get("hipotesis_id") or h.get("id") or "H"
+            parts.append(f"{hid}: {str(h['enunciado'])[:180]}")
     summary = g11a.get("bayesian_summary")
     if summary and not _is_stub_text(summary):
-        parts.append(summary)
+        parts.append(str(summary).strip())
     elif g11a.get("confirmed_hypotheses"):
         confirmed = ", ".join(str(x) for x in g11a["confirmed_hypotheses"][:4])
-        parts.append(f"Actualización bayesiana confirma: {confirmed}.")
-    return " ".join(parts)
+        parts.append(f"Hipótesis confirmadas bayesianamente: {confirmed}.")
+    return " ".join(parts) if parts else _MISSING
 
 
-def _synthesize_asis(case: Any, paquete: list) -> list[str]:
-    domain = (case.domain or "").lower()
-    if any(k in domain for k in ("logística", "logistica", "cadena", "suministro")):
-        return [
-            "Recepción y priorización de pedidos",
-            "Validación documental (criterios variables por turno)",
-            "Preparación y picking en bodega (WMS)",
-            "Consolidación y despacho (TMS)",
-            "Última milla y confirmación de entrega",
-            "Devoluciones y registro de causa raíz",
-        ]
-    if paquete and isinstance(paquete[0], dict) and paquete[0].get("incidente_texto"):
-        return [
-            "Captura del síntoma operativo",
-            "Validación de hipótesis DDF",
-            "Medición multi-rater",
-            "Triangulación bayesiana",
-            "Priorización de acciones",
-        ]
-    return [
-        "Intake y mandato diagnóstico",
-        "Recolección multi-rater",
-        "Análisis de brechas",
-        "Síntesis ejecutiva",
-    ]
-
-
-def _synthesize_tobe(case: Any, extra: dict) -> list[str]:
-    outcome = extra.get("expected_outcome") or ""
-    base = [
-        "Estandarización de criterios de validación documental",
-        "Integración WMS-TMS en tiempo real (eliminar re-captura)",
-        "Tablero único de SLA última milla con telemetría operativa",
-        "Taxonomía obligatoria de causas en devoluciones",
-        "Comité quincenal de seguimiento con δσ y KPIs alineados",
-    ]
-    if outcome:
-        base.append(outcome[:120])
-    return base
-
-
-def _synthesize_findings(paquete: list, scoring: dict, g11a: dict) -> list[dict]:
+def _derive_findings_from_survey(scoring: dict, g11a: dict, paquete: list) -> list[dict]:
+    """Hallazgos derivados únicamente de brechas δσ medidas o hipótesis del intake."""
     rows: list[dict] = []
     for gp in (scoring.get("delta_sigma") or {}).get("gap_pairs") or []:
         if not isinstance(gp, dict):
             continue
+        finding = gp.get("interpretation") or (
+            f"Brecha δσ={gp.get('delta')} en {gp.get('dimension', 'dimensión')}"
+        )
         rows.append({
-            "finding": gp.get("interpretation")
-            or f"Brecha δσ={gp.get('delta')} en {gp.get('dimension', 'proceso')}",
-            "evidence": gp.get("roles", "Encuesta multi-rater"),
+            "id": gp.get("id") or f"GAP-{len(rows) + 1:02d}",
+            "finding": finding,
+            "evidence": gp.get("roles") or "Encuesta multi-rater",
             "priority": "ALTA" if gp.get("critical") else "MEDIA",
-            "treatment": "Alinear indicadores ejecutivos con medición en piso",
-        })
-    for h in paquete[:4]:
-        if not isinstance(h, dict):
-            continue
-        rows.append({
-            "finding": _txt(h.get("enunciado"))[:120],
-            "evidence": _txt(h.get("incidente_texto") or h.get("observacion_refutadora"))[:90],
-            "priority": h.get("confianza", "MEDIA"),
-            "treatment": "Piloto de estandarización y medición en 90 días",
+            "dimension": gp.get("dimension"),
         })
     for gap in g11a.get("critical_perception_gaps") or []:
         if not isinstance(gap, dict):
             continue
         rows.append({
-            "finding": _txt(gap.get("interpretation"))[:100],
+            "id": gap.get("hypothesis_id") or f"CPG-{len(rows) + 1:02d}",
+            "finding": _txt(gap.get("interpretation") or gap.get("verdict")),
             "evidence": f"δσ={gap.get('delta_sigma', '—')} · {gap.get('roles', '')}",
             "priority": "ALTA",
-            "treatment": "Workshop de alineamiento estratégico-operativo",
+        })
+    for h in paquete[:4]:
+        if not isinstance(h, dict) or not h.get("enunciado"):
+            continue
+        rows.append({
+            "id": h.get("hipotesis_id") or h.get("id") or f"H-{len(rows) + 1:02d}",
+            "finding": _txt(h.get("enunciado"))[:200],
+            "evidence": _txt(h.get("incidente_texto") or h.get("observacion_refutadora"))[:120],
+            "priority": h.get("confianza") or "MEDIA",
         })
     return rows
 
 
-def _synthesize_bottlenecks(paquete: list) -> list[dict]:
-    defaults = [
-        {
-            "name": "Validación documental heterogénea por turno",
-            "impact_score": 9,
-            "severity": "ALTA",
-            "estimated_cost_usd_month": 28000,
-        },
-        {
-            "name": "Re-captura manual WMS-TMS",
-            "impact_score": 8,
-            "severity": "ALTA",
-            "estimated_cost_usd_month": 18500,
-        },
-        {
-            "name": "Devoluciones sin código de causa raíz",
-            "impact_score": 7,
-            "severity": "MEDIA",
-            "estimated_cost_usd_month": 12000,
-        },
-    ]
-    if not paquete:
-        return defaults
-    out = []
-    for i, h in enumerate(paquete[:3]):
+def _hydrate_findings_treatment(
+    findings: list, g12: dict, g13: dict, bottlenecks: list
+) -> None:
+    """Tratamiento solo si el LLM lo vinculó explícitamente a un hallazgo o cuello."""
+    if not findings:
+        return
+    recs = (
+        (g12.get("strategic_recommendations") if isinstance(g12, dict) else None)
+        or (g13.get("strategic_recommendations") if isinstance(g13, dict) else None)
+        or []
+    )
+    rec_by_finding: dict[str, str] = {}
+    for r in recs:
+        if not isinstance(r, dict):
+            continue
+        text = _txt(r.get("recommendation") or r.get("action"), missing="")
+        if _is_stub_text(text):
+            continue
+        for fid in r.get("linked_findings") or []:
+            rec_by_finding.setdefault(str(fid), text)
+    bott_by_id: dict[str, str] = {}
+    for i, b in enumerate(bottlenecks or []):
+        if isinstance(b, dict):
+            bid = str(b.get("id") or f"CB-{i + 1:02d}")
+            bott_by_id[bid] = _txt(b.get("name"))
+
+    for f in findings:
+        if not isinstance(f, dict):
+            continue
+        existing = f.get("treatment") or f.get("recommendation")
+        if existing and not _is_stub_text(existing):
+            continue
+        fid = str(f.get("id") or "")
+        treatment = rec_by_finding.get(fid)
+        if not treatment:
+            linked = f.get("linked_bottleneck")
+            rec = next(
+                (r for r in recs if isinstance(r, dict) and str(linked) in [str(x) for x in (r.get("linked_bottlenecks") or [])]),
+                None,
+            )
+            if rec:
+                treatment = _txt(rec.get("recommendation") or rec.get("action"), missing="")
+        if treatment and not _is_stub_text(treatment):
+            f["treatment"] = treatment
+
+
+def _derive_matrix_from_gaps(gaps: list, g08: dict) -> list[dict]:
+    """Matriz AS-IS→TO-BE solo desde brechas G05 o opciones TO-BE del LLM."""
+    rows: list[dict] = []
+    tobe_by_id: dict[str, dict] = {}
+    for opt in g08.get("improvement_options") or []:
+        if isinstance(opt, dict) and opt.get("id"):
+            tobe_by_id[str(opt["id"])] = opt
+    for gap in gaps[:8]:
+        if not isinstance(gap, dict):
+            continue
+        to_be = _txt(gap.get("benchmark") or gap.get("to_be"), missing="")
+        if not to_be or to_be == _MISSING:
+            linked = gap.get("linked_option") or gap.get("option_id")
+            if linked and tobe_by_id.get(str(linked)):
+                to_be = _txt(tobe_by_id[str(linked)].get("description") or tobe_by_id[str(linked)].get("name"))
+        rows.append({
+            "component": _txt(gap.get("name") or gap.get("id")),
+            "as_is": _txt(gap.get("as_is")),
+            "to_be": to_be,
+            "impact": _txt(gap.get("estimated_impact") or gap.get("gap_magnitude")),
+        })
+    return rows
+
+
+def _derive_decision_rules_from_paquete(paquete: list, hypotheses_g05: list) -> list[dict]:
+    """Reglas de decisión desde hipótesis G05 o intake DDF — sin plantillas genéricas."""
+    rules: list[dict] = []
+    items = hypotheses_g05 or paquete or []
+    for h in items[:6]:
         if not isinstance(h, dict):
             continue
-        out.append({
-            "name": _txt(h.get("enunciado"))[:80],
-            "impact_score": 9 - i,
-            "severity": h.get("confianza", "ALTA"),
-            "estimated_cost_usd_month": 15000 + i * 3000,
+        signals = h.get("expected_signals") or {}
+        fals = (
+            signals.get("falsification_condition")
+            or h.get("falsification_condition")
+            or h.get("observacion_refutadora")
+            or (signals.get("if_false") or {}).get("all_roles")
+        )
+        rules.append({
+            "rule": _txt(h.get("id") or h.get("hipotesis_id")),
+            "description": _txt(h.get("hypothesis") or h.get("enunciado")),
+            "evidence": _txt(h.get("evidence_needed") or h.get("incidente_texto") or h.get("dato_duro")),
+            "falsification": _txt(fals),
         })
-    return out or defaults
+    return rules
 
 
-def _synthesize_cienciometria(domain: str) -> list[dict]:
-    return [
-        {
-            "title": "Last-mile delivery performance metrics: a systematic review",
-            "year": 2023,
-            "relevance": "HIGH",
-            "key_finding": "La variabilidad en validación documental explica hasta 22% de retrasos en última milla.",
-        },
-        {
-            "title": "WMS-TMS integration maturity in mid-size distributors",
-            "year": 2024,
-            "relevance": "HIGH",
-            "key_finding": "La doble captura reduce productividad de bodega entre 28% y 41% sin sincronización en tiempo real.",
-        },
-        {
-            "title": "Root-cause coding in reverse logistics",
-            "year": 2022,
-            "relevance": "MEDIUM",
-            "key_finding": "Sin taxonomía obligatoria, más del 50% de devoluciones quedan sin acción correctiva trazable.",
-        },
-    ]
+def _derive_implications(g13: dict, g12: dict, g11a: dict, scoring: dict) -> list[str]:
+    """Implicaciones solo desde recomendaciones del LLM o hipótesis confirmadas."""
+    items: list[str] = []
+    for r in (g13.get("strategic_recommendations") or g12.get("strategic_recommendations") or [])[:6]:
+        if isinstance(r, dict):
+            text = _txt(r.get("recommendation") or r.get("action") or r.get("implication"), missing="")
+            if text and not _is_stub_text(text):
+                items.append(text)
+        elif isinstance(r, str) and r.strip():
+            items.append(r.strip())
+    for imp in (g13.get("implications") or g12.get("implications") or [])[:4]:
+        if isinstance(imp, str) and imp.strip() and not _is_stub_text(imp):
+            items.append(imp.strip())
+    confirmed = g11a.get("confirmed_hypotheses") or []
+    if confirmed:
+        items.append(
+            "Hipótesis confirmadas bayesianamente: "
+            + ", ".join(str(c) for c in confirmed[:5])
+            + "."
+        )
+    delta = (scoring.get("delta_sigma") or {}).get("max_gap")
+    if delta is not None and float(delta) > 2:
+        items.append(
+            f"Brecha δσ={float(delta):.2f}: alinear medición entre roles antes de ampliar inversión."
+        )
+    return items
+
+
+def _derive_asis_activities_from_g06(g06: dict) -> list[dict]:
+    """Actividades AS-IS solo desde salida G06."""
+    out: list[dict] = []
+    for a in g06.get("activities") or []:
+        if isinstance(a, dict):
+            out.append(dict(a))
+    return out
+
+
+def _format_quantitative_context(extra: dict) -> str:
+    """Contexto operativo NO sensible para los prompts (perfil ya declarado en el intake).
+    No incluye datos financieros confidenciales (costos, presupuestos, KPIs internos):
+    esos no se solicitan al cliente por seguridad y para no sesgar el diagnóstico."""
+    lines: list[str] = []
+    mapping = (
+        ("Sector declarado", extra.get("sector")),
+        ("Empleados totales", extra.get("size_org")),
+        ("Antigüedad de operación", extra.get("years_operating")),
+        ("Áreas/sedes involucradas", extra.get("areas_count")),
+        ("Resultado esperado", extra.get("expected_outcome")),
+        ("Intentos previos", extra.get("previous_attempts")),
+    )
+    for label, val in mapping:
+        if val not in (None, ""):
+            lines.append(f"- {label}: {val}")
+    return "\n".join(lines) if lines else "Sin datos operativos adicionales declarados por el cliente."
+
+
+def _has_survey(case: Any) -> bool:
+    sessions = getattr(case, "survey_sessions", None) or []
+    return any(getattr(s, "responses", None) for s in sessions)
+
+
+def validate_report_for_deliverables(data: dict[str, Any], case: Any) -> list[str]:
+    """Fail-closed: bloquea PDF si faltan secciones críticas sin fuente real."""
+    missing: list[str] = []
+    executive = data.get("executive") or {}
+    if _is_stub_text(executive.get("thesis")):
+        missing.append("Resumen ejecutivo (fusion/g13)")
+    if _has_survey(case):
+        scoring = data.get("scoring") or {}
+        if scoring.get("overall_score") in (None, "", _MISSING):
+            missing.append("Scoring global de encuesta (g10a)")
+        psych = data.get("psychometrics") or {}
+        if psych.get("cronbach") in (None, "", _MISSING) and psych.get("reliability") in (None, "", _MISSING):
+            missing.append("α Cronbach (g10b)")
+        if psych.get("irr") in (None, "", _MISSING):
+            missing.append("IRR Krippendorff (irr_calculator)")
+    findings = (data.get("findings") or {}).get("matrix") or []
+    if not findings:
+        missing.append("Matriz de hallazgos (g12 o brechas δσ)")
+    outputs = data.get("pipeline_outputs") or {}
+    for tool, label in (
+        ("g03_cienciometro", "Cienciometría (g03)"),
+        ("g04_cartografo", "Cartografía sectorial (g04)"),
+        ("g06_bpmn_architect", "Proceso AS-IS (g06)"),
+        ("g07_cuellos", "Cuellos de botella (g07)"),
+        ("g08_optimizador", "Optimización TO-BE (g08)"),
+        ("g13_redactor", "Narrativa ejecutiva (g13)"),
+    ):
+        raw = outputs.get(tool)
+        if not raw or (isinstance(raw, dict) and raw.get("error")):
+            missing.append(label)
+    g13 = outputs.get("g13_redactor") if isinstance(outputs.get("g13_redactor"), dict) else {}
+    if not g13.get("executive_summary") and _is_stub_text(executive.get("narrative")):
+        missing.append("Narrativa integrada (g13)")
+    return missing
 
 
 def _build_engagement_context(case: Any, payload: dict, extra: dict) -> dict:
@@ -272,6 +369,7 @@ def _build_engagement_context(case: Any, payload: dict, extra: dict) -> dict:
         "contact_name": extra.get("contact_name", "—"),
         "contact_role": extra.get("contact_role", "—"),
         "contact_email": extra.get("contact_email", "—"),
+        "contact_phone": extra.get("contact_phone", "—"),
         "grey_sources": payload.get("grey_sources") or [],
         "roles": payload.get("roles") or [],
         "dimensions": payload.get("dimensions") or [],
@@ -334,458 +432,119 @@ def _section_guides(domain: str) -> dict[str, str]:
     }
 
 
-def _synthesize_cartografia(domain: str, extra: dict) -> dict:
-    sector = extra.get("sector") or "Logística"
-    return {
-        "industry_cases": [
-            {
-                "company_type": f"Distribuidor {sector} — 200–500 FTE",
-                "problem": "SLA última milla 65–72%; KPI ejecutivo desalineado",
-                "solution": "Checklist unificado + tablero telemetría TMS",
-                "result": "SLA real 88% en 5 meses; δσ reducido de 2.4 a 0.9",
-            },
-            {
-                "company_type": "Operador regional Andina",
-                "problem": "Doble captura WMS-TMS; 38% re-ingreso manual",
-                "solution": "Integración event-driven + reconciliación nocturna",
-                "result": "Productividad bodega +31%; payback 4.2 meses",
-            },
-            {
-                "company_type": "Cadena urbana última milla",
-                "problem": "58% devoluciones sin causa raíz",
-                "solution": "Taxonomía RCA obligatoria + comité quincenal",
-                "result": "Acciones correctivas trazables en 94% de casos",
-            },
-        ],
-        "best_practices": [
-            {"practice": "Single source of truth para SLA", "impact": "Elimina brecha ejecutivo-operativo en KPIs"},
-            {"practice": "Auditoría cruzada de turnos A/B", "impact": "Detecta variabilidad en validación documental"},
-            {"practice": "Piloto bodega antes de rollout nacional", "impact": "Reduce riesgo de implementación TO-BE"},
-            {"practice": "Comité δσ quincenal", "impact": "Sostiene alineamiento post-diagnóstico"},
-        ],
-        "sector_process": {
-            "description": (
-                f"En {sector}, el flujo estándar abarca recepción de pedido, validación documental, "
-                "preparación WMS, despacho TMS, última milla y gestión de devoluciones. "
-                "Los cuellos típicos se concentran en la transición validación→bodega y en la sincronización WMS-TMS."
-            ),
-        },
-        "technologies": [
-            "WMS cloud con APIs abiertas",
-            "TMS con optimización de rutas",
-            "MDM de pedidos y clientes",
-            "Tablero BI operativo en tiempo real",
-            "Motor de reglas para validación documental",
-        ],
-        "benchmarks": [
-            {"kpi": "SLA última milla", "sector_p50": "82%", "cliente": "62–70% (estimado)", "gap": "-12 a -20 pp"},
-            {"kpi": "Tiempo validación documental", "sector_p50": "12 min", "cliente": "28–45 min", "gap": "+130%"},
-            {"kpi": "Devoluciones con RCA", "sector_p50": "85%", "cliente": "42%", "gap": "-43 pp"},
-            {"kpi": "Re-captura WMS-TMS", "sector_p50": "<8%", "cliente": "38–40%", "gap": "+30 pp"},
-        ],
-    }
-
-
-def _synthesize_matrix(paquete: list, tobe_steps: list, bottlenecks: list) -> list[dict]:
-    pairs = [
-        ("Validación documental", "Criterios manuales distintos por turno y bodega", "Checklist digital unificado con auditoría semanal"),
-        ("Integración WMS-TMS", "Doble captura; estados desincronizados", "API event-driven con reconciliación automática"),
-        ("SLA última milla", "KPI ejecutivo sin telemetría operativa", "Tablero único con datos TMS en tiempo real"),
-        ("Devoluciones", "58% sin código de causa raíz", "Taxonomía RCA obligatoria + comité de gestión"),
-        ("Alineamiento roles", "δσ crítico dirección vs operación", "Comité quincenal δσ + KPIs compartidos"),
-    ]
-    rows = []
-    for i, (comp, as_is, to_be) in enumerate(pairs):
-        cost = 0
-        if i < len(bottlenecks) and isinstance(bottlenecks[i], dict):
-            cost = bottlenecks[i].get("estimated_cost_usd_month", 15000)
-        rows.append({
-            "component": comp,
-            "as_is": as_is,
-            "to_be": to_be,
-            "impact": f"USD {cost:,}/mes recuperables estimados" if cost else "Impacto alto",
-        })
-    return rows
-
-
-def _synthesize_roadmap(paquete: list, extra: dict, scoring: dict) -> list[dict]:
-    delta = (scoring.get("delta_sigma") or {}).get("max_gap", 2.3)
-    return [
-        {
-            "phase": "0–30 días",
-            "content": (
-                "Confirmar hipótesis H-01 en bodega piloto (Medellín). Estandarizar checklist de validación "
-                "documental entre turnos A/B. Medir SLA real con telemetría TMS."
-            ),
-            "owner": "Dir. Operaciones + QA",
-            "kpi": f"Reducir δσ de {delta:.1f} a <1.5",
-        },
-        {
-            "phase": "31–90 días",
-            "content": (
-                "Integración WMS-TMS fase 1 (sincronización estados pedido). Desplegar tablero único SLA última milla. "
-                "Capacitar supervisores en taxonomía RCA."
-            ),
-            "owner": "TI + Operaciones",
-            "kpi": "Eliminar 80% de re-captura manual",
-        },
-        {
-            "phase": "91–180 días",
-            "content": (
-                "Rollout nacional de checklist y tablero. Comité quincenal δσ con dirección y mandos medios. "
-                "Auditoría de adopción por bodega."
-            ),
-            "owner": "PMO Transformación",
-            "kpi": "Madurez global >75/100",
-        },
-        {
-            "phase": "181–365 días",
-            "content": (
-                "Optimización de rutas TMS. Automatización de reglas de validación documental. "
-                "Benchmark externo y certificación ISO 9001 proceso logístico."
-            ),
-            "owner": "Comité Estratégico",
-            "kpi": extra.get("expected_outcome", "ROI positivo en 90 días")[:80],
-        },
-    ]
-
-
-def _synthesize_decision_rules(paquete: list, scoring: dict) -> list[dict]:
-    rules = []
-    max_gap = (scoring.get("delta_sigma") or {}).get("max_gap", 0)
-    for h in paquete or []:
-        if not isinstance(h, dict):
-            continue
-        hid = h.get("hipotesis_id") or "H"
-        rules.append({
-            "rule": hid,
-            "description": _txt(h.get("enunciado")),
-            "condition": (
-                f"SI incidente DDF confirma patrón Y δσ>{max_gap:.1f} entre roles "
-                f"ENTONCES priorizar intervención en 90 días"
-            ),
-            "action": "Activar piloto de estandarización y medición continua",
-            "falsification": _txt(h.get("observacion_refutadora")),
-        })
-    rules.append({
-        "rule": "R-δσ",
-        "description": "Brecha crítica de percepción entre Estratégico y Operativo",
-        "condition": "SI δσ > 2.0 en dimensión de procesos ENTONCES escalar a comité ejecutivo",
-        "action": "Workshop de alineamiento + tablero compartido de KPIs",
-        "falsification": "δσ < 1.0 sostenido por 2 ciclos de medición",
-    })
-    return rules
-
-
-def _synthesize_tobe_options(paquete: list, bottlenecks: list) -> list[dict]:
-    opts = [
-        {
-            "name": "Estandarización validación documental",
-            "description": "Checklist digital unificado, auditoría cruzada turnos, capacitación supervisores",
-            "roi_percent": 142,
-            "payback_months": 4,
-            "investment_usd": 45000,
-            "monthly_savings_usd": 28000,
-        },
-        {
-            "name": "Integración WMS-TMS tiempo real",
-            "description": "API event-driven, eliminación re-captura, reconciliación automática de estados",
-            "roi_percent": 118,
-            "payback_months": 5,
-            "investment_usd": 72000,
-            "monthly_savings_usd": 18500,
-        },
-        {
-            "name": "Taxonomía RCA devoluciones",
-            "description": "Códigos obligatorios, tablero de causas, comité quincenal de acciones correctivas",
-            "roi_percent": 95,
-            "payback_months": 6,
-            "investment_usd": 28000,
-            "monthly_savings_usd": 12000,
-        },
-    ]
-    return opts
-
-
-def _synthesize_asis_activities(steps: list[str], paquete: list) -> list[dict]:
-    lanes = ["Comercial", "Operaciones", "Bodega", "Transporte", "Última milla", "Post-venta"]
-    activities = []
-    for i, step in enumerate(steps):
-        is_bottleneck = i in (1, 2, 5)  # validación, WMS, devoluciones
-        activities.append({
-            "name": step,
-            "lane": lanes[i] if i < len(lanes) else "Operaciones",
-            "is_critical": is_bottleneck,
-            "is_bottleneck": is_bottleneck,
-            "notes": (
-                _txt(paquete[i].get("incidente_texto"))[:100]
-                if i < len(paquete) and isinstance(paquete[i], dict)
-                else "Actividad del flujo AS-IS documentado"
-            ),
-        })
-    return activities
-
-
-def _synthesize_implications(case: Any, scoring: dict, paquete: list, g11a: dict) -> list[str]:
-    score = scoring.get("overall_score", 62)
-    delta = (scoring.get("delta_sigma") or {}).get("max_gap", 0)
-    items = [
-        f"La madurez global de {score}/100 sitúa a {case.client_name} por debajo del benchmark sectorial (75), "
-        "requiriendo intervención priorizada en procesos y alineamiento de roles.",
-    ]
-    if float(delta or 0) > 2:
-        items.append(
-            f"La brecha δσ={delta:.1f} confirma que los indicadores ejecutivos no reflejan la realidad operativa. "
-            "Se recomienda suspender decisiones basadas solo en el tablero actual hasta alinear telemetría."
-        )
-    for h in paquete[:2]:
-        if isinstance(h, dict) and h.get("confianza") == "ALTA":
-            items.append(
-                f"{h.get('hipotesis_id', 'H')}: prioridad ALTA — incidente documentado y señal multi-rater convergente."
-            )
-    confirmed = g11a.get("confirmed_hypotheses") or []
-    if confirmed:
-        items.append(
-            f"Hipótesis confirmadas bayesianamente ({', '.join(str(c) for c in confirmed[:3])}): "
-            "proceder a diseño de piloto en 30 días."
-        )
-    items.append(
-        "Próximo paso inmediato: constitución de PMO de transformación con mandato de 90 días "
-        "y métricas de éxito vinculadas a reducción de δσ y recuperación de SLA."
-    )
-    return items
-
-
-def _synthesize_narrative(case: Any, extra: dict, scoring: dict, paquete: list, g11a: dict) -> str:
-    symptom = extra.get("symptom", "")
-    score = scoring.get("overall_score", "—")
-    delta = (scoring.get("delta_sigma") or {}).get("max_gap", "—")
-    parts = [
-        f"El diagnóstico de {case.client_name} en el dominio «{case.domain}» revela una organización "
-        f"con capacidades heterogéneas (madurez {score}/100) donde los síntomas reportados —{symptom[:200]}— "
-        "tienen raíz en tres frentes convergentes: variabilidad en validación documental, desintegración WMS-TMS "
-        "y ausencia de trazabilidad en devoluciones.",
-        (
-            f"La encuesta multi-rater con {scoring.get('total_responses', 3)} perfiles confirma una brecha "
-            f"de percepción δσ={delta} entre dirección y operación, lo que explica por qué el tablero ejecutivo "
-            "puede mostrar cumplimiento aparente mientras el piso registra retrasos y devoluciones masivas."
-        ),
-    ]
-    for h in paquete[:2]:
-        if isinstance(h, dict):
-            parts.append(
-                f"La hipótesis {h.get('hipotesis_id', '')} ancla el análisis a un incidente verificable: "
-                f"{_txt(h.get('incidente_texto'))[:150]}"
-            )
-    summary = g11a.get("bayesian_summary")
-    if summary and not _is_stub_text(summary):
-        parts.append(summary)
-    parts.append(
-        "La recomendación estratégica es ejecutar un piloto de 90 días en la bodega con mayor incidencia, "
-        "estandarizando criterios y desplegando telemetría unificada antes de un rollout nacional."
-    )
-    return " ".join(parts)
+def _split_paragraphs(text: str, *, max_parts: int = 4) -> list[str]:
+    """Divide un texto largo real (del LLM) en párrafos, sin inventar contenido."""
+    if not text or _is_stub_text(text):
+        return []
+    raw = str(text).strip()
+    parts = [p.strip() for p in re.split(r"\n{2,}|\r\n\r\n", raw) if p.strip()]
+    if len(parts) <= 1:
+        parts = [p.strip() for p in re.split(r"(?<=[.;])\s+(?=[A-ZÁÉÍÓÚÑ])", raw) if p.strip()]
+        merged: list[str] = []
+        buf = ""
+        for sentence in parts:
+            buf = f"{buf} {sentence}".strip()
+            if len(buf) >= 320:
+                merged.append(buf)
+                buf = ""
+        if buf:
+            merged.append(buf)
+        parts = merged or [raw]
+    return parts[:max_parts]
 
 
 def _build_dense_narratives(
-    case: Any, extra: dict, paquete: list, scoring: dict, g11a: dict, bottlenecks: list
+    case: Any, extra: dict, paquete: list, g13: dict, g11a: dict
 ) -> dict[str, list[str]]:
-    """Párrafos extensos por sección — llenan el documento con sustento analítico."""
-    client = case.client_name
-    domain = case.domain or "operaciones"
-    score = scoring.get("overall_score", 62)
-    delta = (scoring.get("delta_sigma") or {}).get("max_gap", 2.3)
-    symptom = extra.get("symptom") or "síntomas operativos recurrentes"
-    total_loss = sum(
-        int(b.get("estimated_cost_usd_month", 0) or 0)
-        for b in bottlenecks if isinstance(b, dict)
-    )
-    h1 = paquete[0].get("enunciado", "") if paquete and isinstance(paquete[0], dict) else ""
-    h1_inc = paquete[0].get("incidente_texto", "") if paquete and isinstance(paquete[0], dict) else ""
+    """Prosa por sección — SOLO contenido real: narrativa del LLM (g13),
+    contexto declarado por el usuario e hipótesis del intake. Nada inventado.
+    Las secciones sin fuente real quedan vacías (renderizan sus tablas reales)."""
+    out: dict[str, list[str]] = {}
 
-    dim_text = []
-    for d in scoring.get("dimension_scores") or []:
-        if isinstance(d, dict):
-            dim_text.append(
-                f"{d.get('dimension', 'Dimensión')}: score {d.get('score')}/100 "
-                f"(brecha {d.get('gap', '—')} vs benchmark {d.get('benchmark', 75)}). "
-            )
+    # Contexto: datos declarados por el usuario en el wizard (fuente real = formulario).
+    ctx_bits: list[str] = []
+    sector = _txt(extra.get("sector"), missing="")
+    size_org = _txt(extra.get("size_org"), missing="")
+    city = _txt(extra.get("city"), missing="")
+    country = _txt(extra.get("country"), missing="")
+    loc = ", ".join(x for x in (city, country) if x)
+    ident = f"<b>{case.client_name}</b>"
+    if sector:
+        ident += f", sector {sector}"
+    if size_org:
+        ident += f", {size_org} colaboradores"
+    if loc:
+        ident += f", con sede en {loc}"
+    ctx_bits.append(f"{ident}.")
+    symptom = _txt(extra.get("symptom"), missing="")
+    if symptom:
+        line = f"Síntoma reportado por el cliente: {symptom}"
+        since = _txt(extra.get("problem_since"), missing="")
+        if since:
+            line += f" (manifiesto desde {since})"
+        prev = _txt(extra.get("previous_attempts"), missing="")
+        if prev:
+            line += f". Intentos previos: {prev}"
+        ctx_bits.append(line + ".")
+    sponsor = _txt(extra.get("contact_name"), missing="")
+    if sponsor:
+        srole = _txt(extra.get("contact_role"), missing="")
+        outcome = _txt(extra.get("expected_outcome"), missing="")
+        deadline = _txt(extra.get("deadline"), missing="")
+        sp = f"Sponsor del diagnóstico: {sponsor}"
+        if srole:
+            sp += f" ({srole})"
+        if outcome:
+            sp += f". Resultado esperado declarado: {outcome}"
+        if deadline:
+            sp += f". Plazo acordado: {deadline}"
+        ctx_bits.append(sp + ".")
+    if ctx_bits:
+        out["context"] = ctx_bits
 
-    hypo_blocks = []
+    # Resumen ejecutivo y narrativa: SOLO del redactor LLM (g13).
+    exec_summary = g13.get("executive_summary")
+    exec_parts = _split_paragraphs(exec_summary, max_parts=3)
+    if exec_parts:
+        out["executive"] = exec_parts
+
+    narrative = _split_paragraphs(g13.get("full_narrative"), max_parts=4)
+    if narrative:
+        out["narrative"] = narrative
+
+    # DDF: hipótesis reales aportadas por el usuario en el intake.
+    confirmed = str(g11a.get("confirmed_hypotheses") or "")
+    hypo_blocks: list[str] = []
     for h in paquete or []:
         if not isinstance(h, dict):
             continue
-        hid = h.get("hipotesis_id", "H")
-        hypo_blocks.append(
-            f"<b>{hid}</b> — {h.get('enunciado', '')} "
-            f"La observación refutadora indica que {h.get('observacion_refutadora', 'existen datos contradictorios')}. "
-            f"Incidente anclado: {h.get('incidente_texto', 'documentado en intake')}. "
-            f"Nivel de confianza {h.get('confianza', 'MEDIA')}, dato duro {h.get('dato_duro', '—')}. "
-            f"Esta hipótesis {'fue confirmada bayesianamente' if hid.replace('-', '') in str(g11a.get('confirmed_hypotheses', '')) else 'requiere validación adicional en piloto'}."
-        )
+        hid = h.get("hipotesis_id") or h.get("id") or "H"
+        enun = _txt(h.get("enunciado"), missing="")
+        if not enun:
+            continue
+        block = f"<b>{hid}</b> — {enun}"
+        refut = _txt(h.get("observacion_refutadora"), missing="")
+        if refut:
+            block += f" Observación refutadora: {refut}."
+        inc = _txt(h.get("incidente_texto"), missing="")
+        if inc:
+            block += f" Incidente anclado: {inc}."
+        conf = _txt(h.get("confianza"), missing="")
+        dato = _txt(h.get("dato_duro"), missing="")
+        meta_bits = []
+        if conf:
+            meta_bits.append(f"confianza {conf}")
+        if dato:
+            meta_bits.append(f"dato duro {dato}")
+        if meta_bits:
+            block += f" ({'; '.join(meta_bits)})."
+        if str(hid).replace("-", "") in confirmed.replace("-", ""):
+            block += " Confirmada por la actualización bayesiana."
+        hypo_blocks.append(block)
+    if hypo_blocks:
+        out["ddf"] = hypo_blocks
 
-    return {
-        "context": [
-            (
-                f"El presente informe documenta el diagnóstico organizacional de <b>{client}</b>, "
-                f"empresa del sector {extra.get('sector', '—')} con {extra.get('size_org', '—')} colaboradores, "
-                f"con sede en {extra.get('city', '—')}, {extra.get('country', '—')}. "
-                f"El engagement {case.engagement_id} fue iniciado porque {symptom}. "
-                f"El problema se manifiesta desde hace {extra.get('problem_since', '—')} y "
-                f"intentos previos ({extra.get('previous_attempts', '—')}) no lograron sostenibilidad."
-            ),
-            (
-                f"El sponsor del diagnóstico es {extra.get('contact_name', '—')} "
-                f"({extra.get('contact_role', '—')}), quien definió como resultado esperado: "
-                f"{extra.get('expected_outcome', '—')}. Plazo acordado: {extra.get('deadline', '—')}. "
-                f"Confidencialidad: {extra.get('confidentiality', 'Confidencial')}."
-            ),
-        ],
-        "executive": [
-            (
-                f"{client} obtiene un índice de madurez de <b>{score}/100</b>, "
-                f"13 puntos por debajo del benchmark sectorial (75). Esto no es un puntaje aislado: "
-                f"refleja convergencia entre encuesta multi-rater (3 perfiles), hipótesis DDF con incidentes "
-                f"documentados y actualización bayesiana. La brecha δσ={delta} entre roles estratégico y operativo "
-                f"es la señal más crítica: indica que las decisiones de inversión basadas en tableros ejecutivos "
-                f"corren riesgo de optimizar indicadores que no representan la realidad en bodega y ruta."
-            ),
-            (
-                f"La pérdida de oportunidad estimada asciende a <b>USD {total_loss:,}/mes</b> "
-                f"(USD {total_loss * 12:,}/año) distribuida en cuellos de validación documental, "
-                f"re-captura WMS-TMS y devoluciones sin causa raíz. Intervenir en los próximos 90 días "
-                f"con un piloto en bodega de alto impacto puede recuperar entre 40% y 60% de esa cifra "
-                f"sin inversión en infraestructura mayor."
-            ),
-        ],
-        "methodology": [
-            (
-                "ARHIAX Dx Pro no es un cuestionario con informe automático. Es un pipeline de 18 agentes "
-                "especializados que ejecutan cinco fases: investigación (G01–G05), diseño de proceso (G06–G08), "
-                "construcción de instrumento psicométrico (G09a–c), análisis cuantitativo (G10–G11) y síntesis "
-                "ejecutiva con control de calidad (G12–G14). Cada fase produce artefactos auditables bajo "
-                "gobernanza PMEL/ATK con outcome PERMIT/DENY por etapa."
-            ),
-            (
-                "La triangulación metodológica exige que ninguna conclusión dependa de una sola fuente. "
-                "Un hallazgo ejecutivo debe cruzar: (a) incidente DDF con dato duro, (b) señal cuantitativa "
-                "de encuesta Likert 1–5 corregida por rol, y (c) veredicto bayesiano posterior. "
-                "Solo cuando las tres convergen se eleva a 'confirmado' en este informe."
-            ),
-        ],
-        "triangulation": [
-            (
-                f"La matriz de triangulación de este caso muestra convergencia en H-01: el incidente "
-                f"{h1_inc[:120] if h1_inc else 'documentado'} coincide con δσ={delta} en la dimensión "
-                f"de procesos y con posterior bayesiano favorable. Esto descarta la hipótesis de que "
-                f"el problema sea solo de percepción negativa del personal operativo."
-            ),
-            (
-                "Interpretación de δσ: valores superiores a 2.0 en escala HIC indican brecha crítica "
-                "entre quien define estrategia y quien ejecuta. No es un problema de comunicación superficial: "
-                "refleja KPIs desconectados, procesos no estandarizados y ausencia de telemetría compartida. "
-                "La acción correctiva no es un workshop genérico sino alinear medición antes de invertir."
-            ),
-        ],
-        "maturity": [
-            (
-                f"El desglose dimensional confirma debilidad transversal: {' '.join(dim_text[:3])}"
-                "Ninguna dimensión supera 70/100. Eficiencia de Procesos (52) es la más crítica, "
-                "coherente con cuellos en validación documental y WMS-TMS identificados en AS-IS."
-            ),
-            (
-                "Scores por rol: Estratégico 71 (optimista), Táctico 63 (moderado), Operativo 52 (crítico). "
-                "El gradiente descendente confirma que quien más conoce la fricción (operaciones) "
-                "reporta la peor percepción. Ignorar esta señal repite el error de priorizar inversiones "
-                "tecnológicas sin resolver estandarización de criterios en piso."
-            ),
-        ],
-        "cienciometria": [
-            (
-                f"La literatura aplicada al dominio «{domain}» sostiene tres hallazgos directamente "
-                "transferibles: (1) variabilidad en validación documental explica hasta 22% de retrasos "
-                "en última milla; (2) doble captura WMS-TMS reduce productividad 28–41%; "
-                "(3) ausencia de taxonomía RCA deja >50% de devoluciones sin acción correctiva. "
-                "Estos no son benchmarks genéricos: mapean 1:1 con las hipótesis DDF del intake."
-            ),
-        ],
-        "cartografia": [
-            (
-                "La cartografía sectorial posiciona a este cliente frente a tres arquetipos comparables "
-                "en LATAM: distribuidor regional con SLA 65–72%, operador con doble captura WMS-TMS, "
-                "y cadena urbana con devoluciones sin RCA. En los tres casos, la intervención exitosa "
-                "combinó estandarización operativa (no solo software) con tablero único de telemetría."
-            ),
-            (
-                "Brechas vs sector P50: SLA última milla -12 a -20 pp, tiempo validación +130%, "
-                "RCA en devoluciones -43 pp, re-captura WMS-TMS +30 pp. Estas brechas cuantifican "
-                "el espacio de mejora y fundamentan el ROI de las tres opciones TO-BE propuestas."
-            ),
-        ],
-        "ddf": hypo_blocks if hypo_blocks else [
-            "El intake DDF no registró hipótesis estructuradas. Se recomienda completar el paquete "
-            "de hipótesis antes de la siguiente iteración diagnóstica."
-        ],
-        "process": [
-            (
-                f"El proceso AS-IS de {client} en {domain} comprende seis macro-etapas con cuellos "
-                "concentrados en validación documental (turnos A/B con criterios distintos), "
-                "preparación WMS con re-captura manual hacia TMS, y post-venta sin taxonomía RCA. "
-                "Cada actividad marcada como cuello tiene evidencia en incidentes DDF o en δσ de encuesta."
-            ),
-            (
-                "El TO-BE propuesto no reemplaza sistemas existentes sino estandariza criterios, "
-                "sincroniza estados WMS-TMS en tiempo real y obliga codificación de causas en devoluciones. "
-                "Las tres opciones de mejora tienen ROI 95–142% con payback 4–6 meses, "
-                "priorizando intervenciones de bajo capex y alto impacto operativo."
-            ),
-        ],
-        "findings": [
-            (
-                f"Se identificaron {len(paquete or []) + 2} hallazgos priorizados. El más severo es la "
-                f"brecha de percepción δσ={delta} entre dirección y operación, seguido por "
-                f"{' la hipótesis H-01 sobre SLA' if h1 else ' las hipótesis del intake'}. "
-                f"Cada hallazgo incluye tratamiento específico con horizonte de 90 días."
-            ),
-            (
-                f"La suma de cuellos cuantificados representa USD {total_loss:,}/mes. "
-                "Desglosado: validación documental heterogénea (~48% del total), "
-                "re-captura WMS-TMS (~32%), devoluciones sin RCA (~20%). "
-                "Estas proporciones orientan la secuencia del roadmap."
-            ),
-        ],
-        "roadmap": [
-            (
-                "El roadmap de 365 días secuencia intervenciones de forma que cada fase genera "
-                "evidencia para la siguiente: piloto bodega (30 días) → integración WMS-TMS fase 1 (90 días) "
-                "→ rollout nacional (180 días) → optimización TMS y certificación (365 días). "
-                "Cada hito tiene responsable y KPI verificable; no hay actividades genéricas."
-            ),
-        ],
-        "psychometrics": [
-            (
-                "Fiabilidad del instrumento: α Cronbach 0.82 e IRR Krippendorff 0.82 — ambos por encima "
-                "del umbral 0.80 para decisiones estratégicas. Esto valida que las diferencias entre roles "
-                "no son ruido del cuestionario sino brechas organizacionales reales. "
-                "QA Score G14: 91/100 — informe aprobado para renderizado ejecutivo."
-            ),
-        ],
-        "narrative": [
-            (
-                f"En síntesis, {client} enfrenta un problema de alineamiento operativo-estratégico "
-                f"manifestado como {symptom[:150]}. No es un déficit tecnológico puro: "
-                f"es un déficit de estandarización, medición y trazabilidad. "
-                f"La madurez {score}/100 y δσ={delta} son síntomas de un sistema donde "
-                f"los indicadores ejecutivos y la realidad del piso hablan idiomas distintos."
-            ),
-            (
-                "La recomendación de ARHIAX Dx Pro es proceder con PMO de transformación 90 días, "
-                "piloto en bodega de mayor incidencia, y suspender decisiones de inversión mayores "
-                "hasta demostrar reducción de δσ y recuperación de SLA con telemetría unificada. "
-                "El costo de no actuar: USD {:,}/año en oportunidad perdida.".format(total_loss * 12)
-            ),
-        ],
-    }
+    return out
 
 
 def _txt(value: Any, *, missing: str = _MISSING) -> str:
@@ -893,8 +652,11 @@ def _tobe_flow(g08: dict, g06: dict) -> list[str]:
         if isinstance(proc, list):
             return [_txt(x) for x in proc]
         return [s.strip() for s in re.split(r"→|->|;", str(proc)) if s.strip()]
+    if isinstance(rec, str) and rec.strip():
+        return [s.strip() for s in re.split(r"→|->|\.|;", rec) if s.strip()][:12]
+    rec_id = rec.get("id") if isinstance(rec, dict) else None
     for opt in g08.get("improvement_options") or []:
-        if isinstance(opt, dict) and opt.get("id") == rec.get("id"):
+        if isinstance(opt, dict) and opt.get("id") == rec_id:
             desc = opt.get("description") or opt.get("name")
             if desc:
                 return [s.strip() for s in re.split(r"→|->|\.|;", str(desc)) if s.strip()][:12]
@@ -1022,6 +784,49 @@ def _build_triangulation(
     }
 
 
+_PROFILE_KEYS = (
+    "legal_name", "nit", "sector", "city", "country", "size_org", "years_operating",
+    "symptom", "problem_since", "previous_attempts", "expected_outcome", "deadline",
+    "confidentiality", "contact_name", "contact_role", "contact_email", "contact_phone",
+    "areas_count",
+)
+
+
+def _hydrate_extra(payload: dict) -> dict:
+    """El wizard envía el perfil dentro de `extra`, pero el router lo aplana en la raíz
+    de input_payload. Reconstruimos `extra` leyendo de ambos sitios para el reporte."""
+    extra = dict(payload.get("extra") or {})
+    for key in _PROFILE_KEYS:
+        if not extra.get(key) and payload.get(key) not in (None, ""):
+            extra[key] = payload[key]
+    return extra
+
+
+def _hydrate_paquete(paquete: list, field_data: dict) -> list:
+    """`build_hypothesis_pack` traslada incidente_texto/dato_duro a field_data.
+    Los reinyectamos en cada hipótesis para que el reporte tenga la evidencia DDF."""
+    if not isinstance(paquete, list):
+        return []
+    out: list = []
+    for h in paquete:
+        if not isinstance(h, dict):
+            out.append(h)
+            continue
+        h2 = dict(h)
+        hid = str(h.get("hipotesis_id") or h.get("id") or "")
+        fd = field_data.get(hid) or {}
+        if not h2.get("incidente_texto"):
+            incidents = fd.get("corpus_incidentes") or []
+            if incidents and isinstance(incidents[0], dict):
+                h2["incidente_texto"] = incidents[0].get("texto") or ""
+        if not h2.get("dato_duro"):
+            hard = fd.get("datos_duros") or []
+            if hard and isinstance(hard[0], dict):
+                h2["dato_duro"] = hard[0].get("nivel_dato") or ""
+        out.append(h2)
+    return out
+
+
 def build_pro_report_data(case: Any) -> dict[str, Any]:
     """Estructura completa para markdown/PDF — solo datos de pipeline o vacío explícito."""
     outputs = _collect_outputs(case)
@@ -1049,7 +854,9 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
     if g10a_raw.get("scoring_summary"):
         scoring = {**scoring, **g10a_raw["scoring_summary"]}
 
-    paquete = payload.get("paquete_hipotesis") or []
+    paquete = _hydrate_paquete(
+        payload.get("paquete_hipotesis") or [], payload.get("field_data") or {}
+    )
     triz_rows = _triz_from_paquete(paquete)
     findings = g12.get("findings_matrix") or g12.get("findings") or []
     gaps = g05.get("gaps") or []
@@ -1063,56 +870,57 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
     if not dim_scores and isinstance(scoring.get("dimensions"), list):
         dim_scores = scoring["dimensions"]
 
+    extra = _hydrate_extra(payload)
+
     thesis = (
         fusion.get("executive_thesis")
         or g13.get("executive_summary")
         or (g13.get("full_narrative") or "")[:500]
         or _MISSING
     )
-    extra = payload.get("extra") or {}
     if _is_stub_text(thesis):
-        thesis = _synthesize_executive(case, paquete, scoring, g11a, extra)
+        thesis = _derive_executive(case, paquete, scoring, g11a, extra, g13)
 
     asis_steps = _asis_flow(g06)
-    if not asis_steps or _is_stub_text(" ".join(asis_steps)):
-        asis_steps = _synthesize_asis(case, paquete)
-
     tobe_steps = _tobe_flow(g08, g06)
-    if not tobe_steps or _is_stub_text(" ".join(tobe_steps)):
-        tobe_steps = _synthesize_tobe(case, extra)
 
     if not findings or all(_is_stub_text(f.get("finding")) for f in findings if isinstance(f, dict)):
-        findings = _synthesize_findings(paquete, scoring, g11a)
+        findings = _derive_findings_from_survey(scoring, g11a, paquete)
 
-    if not bottlenecks or all(_is_stub_text(b.get("name")) for b in bottlenecks if isinstance(b, dict)):
-        bottlenecks = _synthesize_bottlenecks(paquete)
+    if bottlenecks and all(_is_stub_text(b.get("name")) for b in bottlenecks if isinstance(b, dict)):
+        bottlenecks = []
+
+    _hydrate_findings_treatment(findings, g12, g13, bottlenecks)
 
     literature = g03.get("literature_map") or []
-    if not literature or all(_is_stub_text(l.get("title")) for l in literature if isinstance(l, dict)):
-        literature = _synthesize_cienciometria(case.domain or "")
 
-    matrix_rows = []
-    for gap in gaps[:8]:
-        if not isinstance(gap, dict):
-            continue
-        matrix_rows.append({
-            "component": _txt(gap.get("name") or gap.get("id")),
-            "as_is": _txt(gap.get("as_is")),
-            "to_be": _txt(gap.get("benchmark")),
-            "impact": _txt(gap.get("estimated_impact") or gap.get("gap_magnitude")),
-        })
+    matrix_rows = _derive_matrix_from_gaps(gaps, g08)
     if not matrix_rows:
-        matrix_rows = _synthesize_matrix(paquete, tobe_steps, bottlenecks)
+        for gap in gaps[:8]:
+            if not isinstance(gap, dict):
+                continue
+            matrix_rows.append({
+                "component": _txt(gap.get("name") or gap.get("id")),
+                "as_is": _txt(gap.get("as_is")),
+                "to_be": _txt(gap.get("benchmark")),
+                "impact": _txt(gap.get("estimated_impact") or gap.get("gap_magnitude")),
+            })
 
     decision_rules = []
     for h in hypotheses_g05[:6]:
         if not isinstance(h, dict):
             continue
-        fals = (h.get("expected_signals") or {}).get("if_true") or {}
+        signals = h.get("expected_signals") or {}
+        fals = (
+            signals.get("falsification_condition")
+            or h.get("falsification_condition")
+            or (signals.get("if_false") or {}).get("all_roles")
+        )
         decision_rules.append({
             "rule": _txt(h.get("id")),
             "description": _txt(h.get("hypothesis")),
-            "evidence": _txt(h.get("evidence_needed") or h.get("falsification_condition")),
+            "evidence": _txt(h.get("evidence_needed") or signals.get("falsification_condition")),
+            "falsification": _txt(fals),
         })
     dmn = g08.get("decision_rules") or g13.get("decision_rules") or []
     for r in dmn[:6]:
@@ -1121,49 +929,60 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
                 "rule": _txt(r.get("name") or r.get("id")),
                 "description": _txt(r.get("condition") or r.get("description")),
                 "evidence": _txt(r.get("action") or r.get("outcome")),
+                "falsification": _txt(r.get("falsification") or r.get("falsification_condition")),
             })
     if not decision_rules:
-        decision_rules = _synthesize_decision_rules(paquete, scoring)
+        decision_rules = _derive_decision_rules_from_paquete(paquete, hypotheses_g05)
 
     roadmap = []
-    impl = g08.get("implementation_roadmap") or {}
-    for label, key in (
-        ("0–90 días", "phase_90_days"),
-        ("91–180 días", "phase_180_days"),
-        ("181–365 días", "phase_365_days"),
+    rm = g08.get("roadmap") or g13.get("roadmap") or {}
+    for key, label in (
+        ("days_90", "0–90 días"),
+        ("days_180", "91–180 días"),
+        ("days_365", "181–365 días"),
     ):
-        if impl.get(key):
-            roadmap.append({"phase": label, "content": _txt(impl[key])})
-    for step in (g13.get("next_steps") or g13.get("roadmap") or [])[:5]:
-        if isinstance(step, str):
-            roadmap.append({"phase": "Recomendación G13", "content": step})
-        elif isinstance(step, dict):
+        ph = rm.get(key) if isinstance(rm, dict) else None
+        if isinstance(ph, dict):
+            actions = [a for a in (ph.get("actions") or []) if a]
+            theme = _txt(ph.get("theme"), missing="")
+            content = "; ".join(_txt(a) for a in actions) if actions else _txt(ph.get("theme"))
+            outcome = ph.get("expected_outcome") or ph.get("investment") or ph.get("kpi")
             roadmap.append({
-                "phase": _txt(step.get("horizon") or step.get("phase")),
-                "content": _txt(step.get("action") or step.get("content")),
+                "phase": label + (f" · {theme}" if theme else ""),
+                "content": content,
+                "kpi": _txt(outcome),
             })
-    if not roadmap or all(_is_stub_text(r.get("content")) for r in roadmap if isinstance(r, dict)):
-        roadmap = _synthesize_roadmap(paquete, extra, scoring)
+    if not roadmap:
+        impl = g08.get("implementation_roadmap") or {}
+        for label, key in (
+            ("0–90 días", "phase_90_days"),
+            ("91–180 días", "phase_180_days"),
+            ("181–365 días", "phase_365_days"),
+        ):
+            if impl.get(key):
+                roadmap.append({"phase": label, "content": _txt(impl[key]), "kpi": _MISSING})
+
+    next_steps_list: list[str] = []
+    for step in (g13.get("next_steps") or [])[:6]:
+        if isinstance(step, str) and step.strip():
+            next_steps_list.append(step.strip())
+        elif isinstance(step, dict):
+            txt = _txt(step.get("action") or step.get("content") or step.get("step"), missing="")
+            if txt:
+                next_steps_list.append(txt)
 
     tobe_options = g08.get("improvement_options") or []
-    if not tobe_options:
-        tobe_options = _synthesize_tobe_options(paquete, bottlenecks)
-
-    asis_activities = g06.get("activities") or []
-    if not asis_activities:
-        asis_activities = _synthesize_asis_activities(asis_steps, paquete)
+    asis_activities = _derive_asis_activities_from_g06(g06)
 
     cart_data = {
         "industry_cases": g04.get("industry_cases") or [],
         "best_practices": g04.get("best_practices") or [],
         "sector_process": g04.get("sector_standard_process") or {},
         "technologies": g04.get("typical_technologies") or [],
+        "benchmarks": g04.get("benchmarks") or [],
         "patents_note": _txt(g04.get("patent_landscape") or g04.get("patentometria"), missing=""),
-        "note": _stage_note("g04_cartografo", outputs),
+        "note": _stage_note("g04_cartografo", outputs) if not g04.get("industry_cases") else None,
     }
-    if not cart_data["industry_cases"]:
-        synth_cart = _synthesize_cartografia(case.domain or "", extra)
-        cart_data.update(synth_cart)
 
     total_loss = g07.get("total_opportunity_loss_usd_month")
     if not total_loss and bottlenecks:
@@ -1175,14 +994,20 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
 
     engagement = _build_engagement_context(case, payload, extra)
     guides = _section_guides(case.domain or "")
-    implications = _synthesize_implications(case, scoring, paquete, g11a)
-    narrative = _synthesize_narrative(case, extra, scoring, paquete, g11a)
-    if _is_stub_text(g13.get("full_narrative")):
-        pass  # use synthesized narrative
-    elif g13.get("full_narrative") and not _is_stub_text(g13.get("full_narrative")):
-        narrative = g13.get("full_narrative")
+    implications = _derive_implications(g13, g12, g11a, scoring)
+    narrative = g13.get("full_narrative") if g13.get("full_narrative") and not _is_stub_text(g13.get("full_narrative")) else _MISSING
 
-    dense_narratives = _build_dense_narratives(case, extra, paquete, scoring, g11a, bottlenecks)
+    dense_narratives = _build_dense_narratives(case, extra, paquete, g13, g11a)
+
+    recommended_next = fusion.get("recommended_next_step")
+    if not recommended_next and next_steps_list:
+        recommended_next = next_steps_list[0]
+    elif not recommended_next:
+        rec = g08.get("recommended_option")
+        if isinstance(rec, dict):
+            recommended_next = _txt(rec.get("name") or rec.get("description"), missing="")
+        elif rec:
+            recommended_next = _txt(rec, missing="")
 
     stage_outcomes = fusion.get("stage_outcomes") or {}
     if not stage_outcomes:
@@ -1209,9 +1034,7 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
             "total_responses": scoring.get("total_responses", fusion.get("response_count", 0)),
             "hypotheses": fusion.get("hypotheses") or [],
             "risk_signals": fusion.get("risk_signals") or [],
-            "next_step": fusion.get("recommended_next_step") or (
-                "Constituir PMO de transformación 90 días con KPIs δσ y SLA unificado"
-            ),
+            "next_step": recommended_next or _MISSING,
             "implications": implications,
             "narrative": narrative,
         },
@@ -1229,7 +1052,7 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
             "methodologies": g03.get("validated_methodologies") or [],
             "causal_factors": g03.get("causal_factors_documented") or [],
             "research_gaps": _txt(g03.get("research_gaps"), missing=""),
-            "note": _stage_note("g03_cienciometro", outputs),
+            "note": _stage_note("g03_cienciometro", outputs) if not literature else None,
         },
         "cartografia": cart_data,
         "triz_ddf": {
@@ -1266,8 +1089,16 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
         "matrix_asis_tobe": matrix_rows,
         "decision_rules": decision_rules,
         "roadmap": roadmap,
+        "next_steps": next_steps_list,
         "psychometrics": {
-            "cronbach": g10b.get("cronbach_alpha") or g10b.get("reliability"),
+            "cronbach": (
+                g10b.get("cronbach_alpha_overall")
+                or g10b.get("cronbach_alpha")
+                or g10b.get("reliability")
+            ),
+            "cronbach_by_dimension": g10b.get("cronbach_by_dimension") or {},
+            "internal_consistency": _txt(g10b.get("internal_consistency"), missing=""),
+            "instrument_reliability": _txt(g10b.get("instrument_reliability"), missing=""),
             "items": g10b.get("item_analysis") or g10b.get("dimensions") or [],
             "irr": irr.get("krippendorff_alpha") or irr.get("overall_alpha"),
             "irr_by_dimension": irr.get("by_dimension") or irr.get("dimension_irr") or [],

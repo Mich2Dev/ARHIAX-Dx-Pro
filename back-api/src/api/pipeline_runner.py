@@ -181,7 +181,26 @@ async def run_diagnostic(diagnostic_id: str, request_id: str, payload: dict) -> 
                 stage.output       = output
                 stage.latency_ms   = latency
                 stage.completed_at = datetime.now(timezone.utc)
+            if status == "failed":
+                diag = await db.get(Diagnostic, diagnostic_id)
+                if diag:
+                    diag.status = "failed"
+                    diag.decision = "DENY"
+                    diag.completed_at = datetime.now(timezone.utc)
+                    diag.rule_results = [{
+                        "rule_id": "PIPELINE-LLM-FAIL-CLOSED",
+                        "outcome": "FAIL",
+                        "severity": "CRITICAL",
+                        "message": f"Etapa {tool_name} falló: {output.get('error', 'error')}",
+                    }]
             await db.commit()
+
+        if status == "failed":
+            return {
+                "status": "failed",
+                "tool": tool_name,
+                "error": output.get("error") if isinstance(output, dict) else str(output),
+            }
 
         # ── Check G01 mandate validation ─────────────────────────────────────
         if tool_name == "g01_receptor" and status == "completed":
@@ -658,7 +677,26 @@ async def run_diagnostic_from_g10a(diagnostic_id: str) -> dict:
                 s.output       = output
                 s.latency_ms   = latency
                 s.completed_at = datetime.now(timezone.utc)
+            if status == "failed":
+                diag = await db.get(Diagnostic, diagnostic_id)
+                if diag:
+                    diag.status = "failed"
+                    diag.decision = "DENY"
+                    diag.completed_at = datetime.now(timezone.utc)
+                    diag.rule_results = [{
+                        "rule_id": "PIPELINE-LLM-FAIL-CLOSED",
+                        "outcome": "FAIL",
+                        "severity": "CRITICAL",
+                        "message": f"Etapa {tool_name} falló: {output.get('error', 'error')}",
+                    }]
             await db.commit()
+
+        if status == "failed":
+            return {
+                "status": "failed",
+                "tool": tool_name,
+                "error": output.get("error") if isinstance(output, dict) else str(output),
+            }
 
     # ── Mark diagnostic complete ──────────────────────────────────────────────
     async with SessionLocal() as db:
