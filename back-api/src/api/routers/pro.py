@@ -24,7 +24,7 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import delete as sa_delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -875,6 +875,31 @@ async def get_case(
     if not case:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
     return _case_detail(case)
+
+
+@router.delete("/cases/{case_id}")
+async def delete_case(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Elimina un caso y todos sus registros hijos (encuestas, respuestas, evidencia)."""
+    case = (await db.execute(select(ProCase).where(ProCase.id == case_id))).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+
+    session_ids = (
+        await db.execute(select(ProSurveySession.id).where(ProSurveySession.case_id == case_id))
+    ).scalars().all()
+    if session_ids:
+        await db.execute(
+            sa_delete(ProSurveyResponse).where(ProSurveyResponse.session_id.in_(session_ids))
+        )
+    await db.execute(sa_delete(ProSurveySession).where(ProSurveySession.case_id == case_id))
+    await db.execute(sa_delete(ProEvidence).where(ProEvidence.case_id == case_id))
+    await db.execute(sa_delete(ProCase).where(ProCase.id == case_id))
+    await db.commit()
+    return {"deleted": case_id, "case_ref": case.case_id}
 
 
 @router.post("/cases/{case_id}/run")
