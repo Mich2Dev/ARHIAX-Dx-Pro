@@ -1,4 +1,5 @@
 import { useState } from "react";
+import axios from "axios";
 import { api } from "@/lib/api";
 import { apiPro } from "@/lib/api-pro";
 
@@ -23,11 +24,37 @@ async function blobErrorMessage(data: Blob): Promise<string> {
     const text = await data.text();
     const json = JSON.parse(text);
     if (typeof json.detail === "string") return json.detail;
+    if (json.detail && typeof json.detail === "object") {
+      const d = json.detail as { message?: string; missing_sections?: string[] };
+      if (d.missing_sections?.length) {
+        return `${d.message ?? "PDF incompleto"}: ${d.missing_sections.join(", ")}`;
+      }
+      return d.message ?? JSON.stringify(json.detail);
+    }
     if (Array.isArray(json.detail)) return json.detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join("; ");
   } catch {
     /* not JSON */
   }
   return "No se pudo descargar el archivo. Verifica que el caso esté aprobado.";
+}
+
+async function extractDownloadError(e: unknown): Promise<string> {
+  if (axios.isAxiosError(e) && e.response?.data) {
+    const data = e.response.data;
+    if (data instanceof Blob) return blobErrorMessage(data);
+    if (typeof data === "object" && data !== null) {
+      const detail = (data as { detail?: unknown }).detail;
+      if (typeof detail === "string") return detail;
+      if (detail && typeof detail === "object") {
+        const d = detail as { message?: string; missing_sections?: string[] };
+        if (d.missing_sections?.length) {
+          return `${d.message ?? "Entregable incompleto"}: ${d.missing_sections.join(", ")}`;
+        }
+        return d.message ?? JSON.stringify(detail);
+      }
+    }
+  }
+  return e instanceof Error ? e.message : "Error al descargar";
 }
 
 async function readBlobArrayBuffer(data: Blob): Promise<ArrayBuffer> {
@@ -89,9 +116,9 @@ export function useDownloadProCase() {
 
       _triggerDownload(new Blob([buf], { type: mime[target] }), safeDownloadName(clientName, ext[target]));
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Error al descargar";
+      const msg = await extractDownloadError(e);
       setError(msg);
-      throw e;
+      throw new Error(msg);
     } finally {
       setLoading(null);
     }

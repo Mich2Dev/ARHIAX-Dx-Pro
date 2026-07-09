@@ -34,9 +34,75 @@ from api.models import User
 from api.models.pro import ProCase, ProEvidence, ProSurveySession, ProSurveyResponse
 from api.pipeline.hypothesis_pack import build_hypothesis_pack, g05_from_paquete
 from api.pipeline.llm_guard import assert_pipeline_stages_ok, stages_failed
+from api.pipeline.pro_survey_roles import (
+    available_role_labels,
+    normalize_role_options,
+)
 from api.services.grammar_gate import lint_markdown
 
 router = APIRouter(prefix="/pro", tags=["pro"])
+
+def _pro_survey_roles(session: ProSurveySession) -> list[str]:
+    return available_role_labels(session.roles)
+
+
+def _case_pipeline_error(case: ProCase) -> str | None:
+    if case.case_status != "error":
+        return None
+    fusion = case.fusion_result if isinstance(case.fusion_result, dict) else {}
+    if fusion.get("error"):
+        return str(fusion["error"])[:800]
+    for e in reversed(case.evidence_entries or []):
+        payload = e.payload if isinstance(e.payload, dict) else {}
+        if e.event_type in ("pipeline_failed", "diagnostic_error") and payload.get("error"):
+            return str(payload["error"])[:800]
+    detail = _pipeline_failure_detail(case)
+    if detail and detail.get("error"):
+        return str(detail["error"])[:800]
+    return "El pipeline falló. Revise la evidencia gobernada del caso."
+
+
+def _case_operational_next_step(case: ProCase, survey_info: dict | None) -> str:
+    status = case.case_status
+    if status == "draft":
+        return "Complete el wizard y cree el caso."
+    if status == "designing":
+        return "Espere a que termine la arquitectura del instrumento (agentes G09)."
+    if status == "error":
+        if survey_info and survey_info.get("status") == "error":
+            return "La arquitectura falló: el enlace de encuesta no funcionará. Cree un caso nuevo con el mismo cliente."
+        return "El diagnóstico falló en el pipeline. Revise el error abajo; puede crear un caso nuevo si el síntoma es muy extenso."
+    if status == "survey_open":
+        rc = (survey_info or {}).get("responses_count", 0)
+        mr = (survey_info or {}).get("min_responses", 3)
+        labels = (survey_info or {}).get("role_labels") or []
+        roles_hint = f" ({', '.join(labels)})" if labels else ""
+        if rc < mr:
+            return f"Comparta el enlace con cada participante{roles_hint}. Progreso: {rc}/{mr} respuestas. Luego lance la síntesis."
+        return f"Tiene {rc}/{mr} respuestas. Puede lanzar la síntesis de diagnóstico."
+    if status == "running":
+        return "Espere a que termine el ciclo de fusión IA. Esta pantalla se actualiza sola."
+    if status == "review_pending":
+        return "Revise los resultados y apruebe o rechace el diagnóstico (HIL)."
+    if status == "approved":
+        return "Descargue el informe PDF desde el panel de resultados."
+    if status == "published":
+        return "Caso publicado. Informe disponible para el cliente."
+    if status == "rejected":
+        return "Diagnóstico rechazado. Revise observaciones y relance si corresponde."
+    return ""
+
+
+def _pro_survey_estimated_minutes(branching: dict | None, question_count: int) -> int:
+    if branching and isinstance(branching.get("role_tracks"), dict):
+        times = [
+            int(track.get("estimated_minutes", 15) or 15)
+            for track in branching["role_tracks"].values()
+            if isinstance(track, dict)
+        ]
+        if times:
+            return max(5, int(sum(times) / len(times)))
+    return max(5, min(25, question_count * 2))
 
 DXPRO_URL = os.getenv("DXPRO_URL", "http://localhost:8310")
 DXPRO_API_KEY = os.getenv("DXPRO_API_KEY", "")
@@ -141,16 +207,20 @@ def _case_detail(c: ProCase) -> dict:
     survey_info = None
     if sessions:
         s = sessions[-1]
+        role_options = normalize_role_options(s.roles)
         survey_info = {
             "token": s.token,
             "status": s.status,
             "responses_count": s.responses_count,
             "min_responses": s.min_responses,
-            "survey_url": f"/survey/{s.token}",
+            "survey_url": f"/survey/pro/{s.token}",
             "roles": s.roles,
+            "role_labels": [o["label"] for o in role_options],
+            "role_options": role_options,
             "dimensions": s.dimensions,
             "question_count": len((s.questions or {}).get("questions", [])),
         }
+    pipeline_error = _case_pipeline_error(c)
     return {
         **_case_summary(c),
         "input_payload": c.input_payload,
@@ -170,6 +240,8 @@ def _case_detail(c: ProCase) -> dict:
         "evidence": [_evidence_summary(e) for e in (c.evidence_entries or [])],
         "survey": survey_info,
         "stages": c.pipeline_stages or [],
+        "pipeline_error": pipeline_error,
+        "next_step": _case_operational_next_step(c, survey_info),
     }
 
 
@@ -1030,6 +1102,14 @@ async def approve_case(
         )
     await db.commit()
     await db.refresh(case)
+
+    # Generar entregables automáticamente tras aprobar (no bloquea la aprobación si falla)
+    if new_case_status in ("approved", "published"):
+        try:
+            await generate_deliverables(case_id, db, current_user)
+        except HTTPException:
+            pass
+
     return _case_summary(case)
 
 
@@ -1219,8 +1299,30 @@ async def download_deliverable(
                                  headers={"Content-Disposition": f'attachment; filename="{safe_name}_diagnostico.docx"'})
 
     if target == "pdf":
+        from api.pipeline.pro_markdown_builder import build_pro_markdown
         from api.pipeline.pro_pdf_builder import build_pro_pdf
-        content = build_pro_pdf(case, evidence)
+        from api.pipeline.pro_report_data import build_pro_report_data, validate_report_for_deliverables
+        report_data = build_pro_report_data(case)
+        report_gaps = validate_report_for_deliverables(report_data, case)
+        if report_gaps:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "No se puede generar el PDF: faltan datos del pipeline.",
+                    "missing_sections": report_gaps,
+                },
+            )
+        try:
+            content = build_pro_pdf(case, evidence)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error al renderizar PDF: {exc}",
+            ) from exc
+        if not content or content[:4] != b"%PDF":
+            raise HTTPException(status_code=500, detail="El generador no produjo un PDF válido.")
         return StreamingResponse(io.BytesIO(content), media_type="application/pdf",
                                  headers={"Content-Disposition": f'attachment; filename="{safe_name}_diagnostico.pdf"'})
 
@@ -1240,22 +1342,38 @@ async def get_pro_survey(token: str, db: AsyncSession = Depends(get_db)) -> dict
         raise HTTPException(status_code=404, detail="Encuesta no encontrada")
     if session.status == "closed":
         raise HTTPException(status_code=410, detail="Esta encuesta ya está cerrada")
+    if session.status in ("error", "designing"):
+        raise HTTPException(
+            status_code=503,
+            detail="Esta encuesta aún no está disponible. El consultor debe regenerar el caso o esperar a que termine la arquitectura.",
+        )
 
     case = session.case
     questions = session.questions or {}
+    q_list = questions.get("questions", []) if isinstance(questions, dict) else (questions if isinstance(questions, list) else [])
+    if len(q_list) < 1:
+        raise HTTPException(
+            status_code=503,
+            detail="El instrumento de encuesta no se generó correctamente. Contacte al consultor.",
+        )
+    available_roles = _pro_survey_roles(session)
+    role_options = normalize_role_options(session.roles)
     return {
         "token": token,
         "is_pro": True,
         "trace_id": case.trace_id if case else None,
         "organization_name": case.client_name if case else "Organización",
         "domain": case.domain if case else "",
-        "instrument_name": questions.get("instrument_name", "Diagnóstico Pro"),
-        "methodology": questions.get("methodology", ""),
-        "roles": questions.get("roles", []),
-        "dimensions": questions.get("dimensions", []),
-        "questions": questions.get("questions", []),
+        "instrument_name": questions.get("instrument_name", "Diagnóstico Pro") if isinstance(questions, dict) else "Diagnóstico Pro",
+        "methodology": questions.get("methodology", "") if isinstance(questions, dict) else "",
+        "roles": available_roles,
+        "available_roles": available_roles,
+        "role_options": role_options,
+        "dimensions": questions.get("dimensions", []) if isinstance(questions, dict) else [],
+        "questions": q_list,
         "branching": session.branching or {},
-        "scale": questions.get("scale", {}),
+        "scale": questions.get("scale", {}) if isinstance(questions, dict) else {},
+        "estimated_minutes": _pro_survey_estimated_minutes(session.branching, len(q_list)),
         "responses_count": session.responses_count,
         "min_responses": session.min_responses,
         "status": session.status,

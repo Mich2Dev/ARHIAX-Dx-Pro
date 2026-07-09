@@ -12,12 +12,12 @@ type Filter = "all" | "running" | "review_pending" | "approved" | "rejected";
 const S_COLOR: Record<string, string> = {
   draft: "#706f69", designing: "#4a5568", survey_open: "#2d6a4f",
   running: "#243c4f", review_pending: "#9b6d4d",
-  approved: "#56624b", published: "#56624b", rejected: "#8b3a3a",
+  approved: "#56624b", published: "#56624b", rejected: "#8b3a3a", error: "#8b3a3a",
 };
 const S_LABEL: Record<string, string> = {
   draft: "Borrador", designing: "Configurando", survey_open: "Recolección",
   running: "Ejecutando", review_pending: "En revisión",
-  approved: "Aprobado", published: "Publicado", rejected: "Rechazado",
+  approved: "Aprobado", published: "Publicado", rejected: "Rechazado", error: "Error",
 };
 
 export default function ProCasesPage() {

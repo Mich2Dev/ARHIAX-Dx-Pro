@@ -22,12 +22,9 @@ export const defaultScope: ProScopeData = {
 };
 
 const ROLES = [
-  { value: "executive",  label: "Ejecutivo",    desc: "Alta dirección y C-suite" },
-  { value: "operations", label: "Operaciones",  desc: "Nivel táctico y operativo" },
-  { value: "technology", label: "Tecnología",   desc: "Área de TI y sistemas" },
-  { value: "strategy",   label: "Estrategia",   desc: "Planeación y estrategia" },
-  { value: "finance",    label: "Finanzas",      desc: "Área financiera y contable" },
-  { value: "hr",         label: "RRHH",          desc: "Recursos humanos" },
+  { value: "executive",  label: "Estratégico",  desc: "Alta dirección y gobernanza (C-suite)" },
+  { value: "operations", label: "Operativo",    desc: "Ejecución y procesos en planta" },
+  { value: "technology", label: "Táctico",      desc: "Gestión, coordinación y tecnología" },
 ];
 
 const DIMENSIONS = [
@@ -103,7 +100,10 @@ export function ProStep2Scope({
 
       <div style={{ marginBottom: "28px" }}>
         <p style={{ margin: "0 0 12px", fontSize: "12px", fontWeight: 500, color: "#171717", fontFamily: "IBM Plex Mono, monospace", paddingBottom: "8px", borderBottom: "1px solid rgba(23,23,23,0.1)" }}>
-          Roles participantes *
+          Roles participantes * <span style={{ fontWeight: 400, color: "#706f69", textTransform: "none" }}>(3 perspectivas multi-rater)</span>
+        </p>
+        <p style={{ margin: "0 0 12px", fontSize: "12px", color: "#706f69", lineHeight: 1.5 }}>
+          Cada rol debe responder la encuesta por separado. Las dimensiones (abajo) son qué se evalúa, no quién responde.
         </p>
         <div className="dx-form-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
           {ROLES.map(r => {

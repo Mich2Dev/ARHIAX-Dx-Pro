@@ -119,13 +119,16 @@ export function SurveyForm({ token, variant = "standard" }: { token: string; var
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const ROLE_LABELS: Record<string, string> = {
-    executive:   "Estrat\u00e9gico",
+    executive:   "Estratégico",
     operations:  "Operativo",
-    technology:  "T\u00e1ctico",
-    // pass-through for already-Spanish roles
-    "Estrat\u00e9gico": "Estrat\u00e9gico",
-    "T\u00e1ctico":    "T\u00e1ctico",
-    "Operativo":    "Operativo",
+    technology:  "Táctico",
+    strategy:    "Planeación",
+    finance:     "Finanzas",
+    hr:          "Recursos humanos",
+    "Estratégico": "Estratégico",
+    "Táctico":    "Táctico",
+    "Operativo":  "Operativo",
+    "Planeación": "Planeación",
   };
 
   const normalizeRole = (r: string) => ROLE_LABELS[r] ?? r;
@@ -149,21 +152,75 @@ export function SurveyForm({ token, variant = "standard" }: { token: string; var
   }
 
   if (error || !survey) {
+    const errMsg = (error as Error)?.message || "";
+    const isUnavailable = errMsg.includes("503") || errMsg.includes("no está disponible") || errMsg.includes("no se generó");
     return (
       <div className="min-h-screen bg-[#f4f1ea] p-4 flex items-center justify-center">
         <div className="bg-white border border-[#171717]/10 shadow-sm max-w-2xl w-full overflow-hidden">
           <div className="p-12 text-center">
             <h1 className="text-2xl font-serif text-[#171717] mb-4" style={{ fontFamily: "Cormorant Garamond, serif" }}>
-              Encuesta no encontrada
+              {isUnavailable ? "Encuesta no disponible" : "Encuesta no encontrada"}
             </h1>
             <p className="text-sm text-[#706f69] font-mono" style={{ fontFamily: "IBM Plex Mono, monospace" }}>
-              Esta encuesta no existe o ha sido cerrada por el consultor.
+              {isUnavailable
+                ? "El instrumento aún no está listo o el caso falló en arquitectura. Pida al consultor un enlace nuevo."
+                : "Esta encuesta no existe o ha sido cerrada por el consultor."}
             </p>
           </div>
         </div>
       </div>
     );
   }
+
+  const ROLE_CATALOG: Record<string, { label: string; description: string }> = {
+    executive:  { label: "Estratégico", description: "Alta dirección y gobernanza" },
+    operations: { label: "Operativo", description: "Ejecución y procesos en planta" },
+    technology: { label: "Táctico", description: "Gestión, coordinación y sistemas" },
+    strategy:   { label: "Planeación", description: "Área de estrategia y planeación (rol funcional)" },
+    finance:    { label: "Finanzas", description: "Perspectiva del área financiera" },
+    hr:         { label: "Recursos humanos", description: "Perspectiva de talento y cultura" },
+  };
+
+  const ROLE_DESCRIPTIONS: Record<string, string> = {
+    "Estratégico": "Alta dirección y gobernanza",
+    "Operativo": "Ejecución y procesos en planta",
+    "Táctico": "Gestión, coordinación y sistemas",
+    "Planeación": "Área de estrategia y planeación (rol funcional)",
+    "Finanzas": "Perspectiva del área financiera",
+    "Recursos humanos": "Perspectiva de talento y cultura",
+  };
+
+  function normalizeRoleOption(raw: string): { id: string; label: string; description: string } {
+    const key = String(raw || "").trim().toLowerCase();
+    if (ROLE_CATALOG[key]) {
+      return { id: key, ...ROLE_CATALOG[key] };
+    }
+    const label = ROLE_DESCRIPTIONS[raw] ? raw : raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    return {
+      id: raw,
+      label,
+      description: ROLE_DESCRIPTIONS[label] ?? ROLE_DESCRIPTIONS[raw] ?? "Perspectiva definida para este diagnóstico",
+    };
+  }
+
+  const rawRoles: string[] =
+    (survey.available_roles?.length ? survey.available_roles : null) ??
+    (survey.roles?.length ? survey.roles : null) ??
+    ["Estratégico", "Táctico", "Operativo"];
+
+  const roleOptions: { id: string; label: string; description: string }[] = (() => {
+    const sources: string[] = survey.role_options?.length
+      ? survey.role_options.map((o: { id?: string; label?: string }) => o.id ?? o.label ?? "")
+      : rawRoles;
+    const seen = new Set<string>();
+    return sources.map(normalizeRoleOption).filter((o) => {
+      if (seen.has(o.label)) return false;
+      seen.add(o.label);
+      return true;
+    });
+  })();
+
+  const availableRoles: string[] = roleOptions.map((o) => o.label);
 
   const allQuestions = parseQuestions(survey.questions);
   const questionsForRole = role
@@ -228,28 +285,23 @@ export function SurveyForm({ token, variant = "standard" }: { token: string; var
               <p className="text-[11px] font-bold text-[#171717] uppercase tracking-wider mb-4 font-mono" style={{ fontFamily: "IBM Plex Mono, monospace" }}>
                 Seleccione su perspectiva:
               </p>
-              {survey.available_roles.map((r: string) => (
+              {roleOptions.map((opt) => (
                 <button
-                  key={r}
-                  onClick={() => setRole(r)}
+                  key={opt.label}
+                  onClick={() => setRole(opt.label)}
                   className={`w-full text-left p-5 transition-all border ${
-                    role === r
+                    role === opt.label
                       ? "border-[#171717] bg-[#171717]/5"
                       : "border-[#171717]/10 hover:border-[#171717]/30 bg-white"
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className={`text-sm font-bold ${role === r ? "text-[#171717]" : "text-[#706f69]"}`}>{r.toUpperCase()}</p>
-                      <p className="text-[11px] text-[#706f69] mt-1 italic">
-                        {r === "Estratégico" && "Perspectiva de alta dirección y gobernanza"}
-                        {r === "Táctico" && "Perspectiva de gestión y coordinación"}
-                        {r === "Operativo" && "Perspectiva de ejecución y procesos"}
-                        {!["Estratégico", "Táctico", "Operativo"].includes(r) && "Perspectiva específica definida para este caso"}
-                      </p>
+                      <p className={`text-sm font-bold ${role === opt.label ? "text-[#171717]" : "text-[#706f69]"}`}>{opt.label.toUpperCase()}</p>
+                      <p className="text-[11px] text-[#706f69] mt-1 italic">{opt.description}</p>
                     </div>
-                    <div className={`w-4 h-4 border ${role === r ? "bg-[#171717] border-[#171717]" : "border-[#171717]/20"}`}>
-                      {role === r && <Check size={12} className="text-white" />}
+                    <div className={`w-4 h-4 border ${role === opt.label ? "bg-[#171717] border-[#171717]" : "border-[#171717]/20"}`}>
+                      {role === opt.label && <Check size={12} className="text-white" />}
                     </div>
                   </div>
                 </button>

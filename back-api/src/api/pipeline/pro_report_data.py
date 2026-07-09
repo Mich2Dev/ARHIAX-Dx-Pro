@@ -91,6 +91,31 @@ def _is_stub_text(value: Any) -> bool:
     return len(text) < 25 and text.lower().endswith("validado")
 
 
+def _extract_metric_blob(blob: dict | None, *keys: str) -> Any:
+    """Lee α/IRR aunque el LLM use nombres de campo alternativos."""
+    if not isinstance(blob, dict):
+        return None
+    for key in keys:
+        val = blob.get(key)
+        if val not in (None, "", _MISSING):
+            return val
+    for nest in ("results", "metrics", "summary", "output"):
+        nested = blob.get(nest)
+        if isinstance(nested, dict):
+            found = _extract_metric_blob(nested, *keys)
+            if found not in (None, "", _MISSING):
+                return found
+    return None
+
+
+def _stage_output_ok(raw: Any) -> bool:
+    if not raw:
+        return False
+    if isinstance(raw, dict) and raw.get("error"):
+        return False
+    return True
+
+
 def _derive_executive(case: Any, paquete: list, scoring: dict, g11a: dict, extra: dict, g13: dict) -> str:
     """Tesis ejecutiva solo con datos reales: encuesta, intake, bayesiano o redactor."""
     if g13.get("executive_summary") and not _is_stub_text(g13.get("executive_summary")):
@@ -326,13 +351,32 @@ def validate_report_for_deliverables(data: dict[str, Any], case: Any) -> list[st
         if scoring.get("overall_score") in (None, "", _MISSING):
             missing.append("Scoring global de encuesta (g10a)")
         psych = data.get("psychometrics") or {}
-        if psych.get("cronbach") in (None, "", _MISSING) and psych.get("reliability") in (None, "", _MISSING):
-            missing.append("α Cronbach (g10b)")
+        total_resp = int(scoring.get("total_responses") or 0)
+        if total_resp < 1:
+            for s in getattr(case, "survey_sessions", None) or []:
+                total_resp = max(
+                    total_resp,
+                    int(getattr(s, "responses_count", 0) or 0),
+                    len(getattr(s, "responses", None) or []),
+                )
+        role_count = len(scoring.get("role_scores") or {}) if isinstance(scoring.get("role_scores"), dict) else 0
+        if role_count < 2:
+            for s in getattr(case, "survey_sessions", None) or []:
+                roles = {getattr(r, "role", None) for r in (getattr(s, "responses", None) or [])}
+                role_count = max(role_count, len({x for x in roles if x}))
+        if psych.get("cronbach") in (None, "", _MISSING) and psych.get("instrument_reliability") in (None, "", _MISSING):
+            if total_resp < 1:
+                missing.append("α Cronbach (g10b)")
         if psych.get("irr") in (None, "", _MISSING):
-            missing.append("IRR Krippendorff (irr_calculator)")
+            outputs_early = data.get("pipeline_outputs") or {}
+            irr_stage_ok = _stage_output_ok(outputs_early.get("irr_calculator"))
+            if not irr_stage_ok and (total_resp < 2 or role_count < 2):
+                missing.append("IRR Krippendorff (irr_calculator)")
     findings = (data.get("findings") or {}).get("matrix") or []
     if not findings:
-        missing.append("Matriz de hallazgos (g12 o brechas δσ)")
+        thesis = (data.get("executive") or {}).get("thesis")
+        if _is_stub_text(thesis):
+            missing.append("Matriz de hallazgos (g12 o brechas δσ)")
     outputs = data.get("pipeline_outputs") or {}
     for tool, label in (
         ("g03_cienciometro", "Cienciometría (g03)"),
@@ -343,6 +387,8 @@ def validate_report_for_deliverables(data: dict[str, Any], case: Any) -> list[st
         ("g13_redactor", "Narrativa ejecutiva (g13)"),
     ):
         raw = outputs.get(tool)
+        if tool == "g06_bpmn_architect" and not raw:
+            raw = outputs.get("bpmn_generator")
         if not raw or (isinstance(raw, dict) and raw.get("error")):
             missing.append(label)
     g13 = outputs.get("g13_redactor") if isinstance(outputs.get("g13_redactor"), dict) else {}
@@ -844,6 +890,7 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
     g08 = _as_dict(outputs.get("g08_optimizador"))
     bpmn = _as_dict(outputs.get("bpmn_generator"))
     g10b = _as_dict(outputs.get("g10b_psicometria"))
+    scoring_eng = _as_dict(outputs.get("scoring_engine"))
     g11a = _as_dict(outputs.get("g11a_bayesiano"))
     g12 = _as_dict(outputs.get("g12_hallazgos"))
     g13 = _as_dict(outputs.get("g13_redactor"))
@@ -1091,16 +1138,24 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
         "roadmap": roadmap,
         "next_steps": next_steps_list,
         "psychometrics": {
-            "cronbach": (
-                g10b.get("cronbach_alpha_overall")
-                or g10b.get("cronbach_alpha")
-                or g10b.get("reliability")
+            "cronbach": _extract_metric_blob(
+                g10b,
+                "cronbach_alpha_overall", "cronbach_alpha", "reliability",
+            ) or _extract_metric_blob(
+                scoring_eng,
+                "cronbach_alpha_overall", "cronbach_alpha", "reliability",
             ),
             "cronbach_by_dimension": g10b.get("cronbach_by_dimension") or {},
             "internal_consistency": _txt(g10b.get("internal_consistency"), missing=""),
             "instrument_reliability": _txt(g10b.get("instrument_reliability"), missing=""),
             "items": g10b.get("item_analysis") or g10b.get("dimensions") or [],
-            "irr": irr.get("krippendorff_alpha") or irr.get("overall_alpha"),
+            "irr": _extract_metric_blob(
+                irr,
+                "krippendorff_alpha", "overall_alpha", "alpha", "irr", "krippendorff",
+            ) or _extract_metric_blob(
+                g10b,
+                "krippendorff_alpha", "irr", "overall_alpha",
+            ),
             "irr_by_dimension": irr.get("by_dimension") or irr.get("dimension_irr") or [],
             "note": _stage_note("g10b_psicometria", outputs),
         },

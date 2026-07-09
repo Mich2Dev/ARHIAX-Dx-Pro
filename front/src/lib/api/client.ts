@@ -1,9 +1,16 @@
 import axios from "axios";
+import { clearAuth } from "./auth";
+
+function resolveBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== "undefined") return "/api/backend";
+  return "http://localhost:8000";
+}
 
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000",
+  baseURL: resolveBaseUrl(),
   headers: { "Content-Type": "application/json" },
-  timeout: 30_000,
+  timeout: 60_000,
 });
 
 // Attach the stored JWT on every request so the header is always fresh,
@@ -22,6 +29,10 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
+    if (err.response?.status === 401 && typeof window !== "undefined") {
+      clearAuth();
+      window.location.href = "/login?expired=1";
+    }
     const msg =
       err.response?.data?.detail ??
       err.response?.data?.message ??

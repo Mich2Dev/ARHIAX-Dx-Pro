@@ -32,7 +32,18 @@ def role_bar_chart(role_scores: dict, width: float = 460, height: float = 130) -
         return None
     d = Drawing(width, height)
     d.add(Rect(0, 0, width, height, fillColor=_hex(C_PAPER), strokeColor=_hex(C_BORDER), strokeWidth=0.5))
-    items = [(k, (v.get("score", 0) if isinstance(v, dict) else float(v or 0))) for k, v in role_scores.items()]
+
+    def _score(v: Any) -> float:
+        if isinstance(v, dict):
+            raw = v.get("score")
+        else:
+            raw = v
+        try:
+            return float(raw) if raw is not None else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    items = [(k, _score(v)) for k, v in role_scores.items()]
     if not items:
         return d
     n = len(items)
@@ -103,8 +114,15 @@ def delta_sigma_bars(gap_pairs: list, width: float = 460, height: float = 0) -> 
                  fontSize=7.5, fillColor=_hex(C_GRAY)))
 
     bar_area_w = width - ml - mr
-    deltas = [abs(float(g.get("delta", 0) or 0)) for g in items]
-    max_delta = max(deltas) or 1.0
+    deltas = []
+    for g in items:
+        try:
+            deltas.append(abs(float(g.get("delta") or 0)))
+        except (TypeError, ValueError):
+            deltas.append(0.0)
+    max_delta = max(deltas) if deltas else 1.0
+    if not max_delta:
+        max_delta = 1.0
 
     y = height - mt - label_h
     for g, delta in zip(items, deltas):

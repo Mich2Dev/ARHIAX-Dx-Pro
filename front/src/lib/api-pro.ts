@@ -3,13 +3,20 @@
  * Apunta al back-api en /pro/* — completamente separado de Standard.
  */
 import axios from "axios";
+import { clearAuth } from "@/lib/api/auth";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+function resolveBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== "undefined") return "/api/backend";
+  return "http://localhost:8000";
+}
+
+const BASE_URL = resolveBaseUrl();
 
 export const apiPro = axios.create({
   baseURL: BASE_URL,
   headers: { "Content-Type": "application/json" },
-  timeout: 30_000,
+  timeout: 60_000,
 });
 
 apiPro.interceptors.request.use((config) => {
@@ -23,6 +30,10 @@ apiPro.interceptors.request.use((config) => {
 apiPro.interceptors.response.use(
   (res) => res,
   (err) => {
+    if (err.response?.status === 401 && typeof window !== "undefined") {
+      clearAuth();
+      window.location.href = "/login?expired=1";
+    }
     const msg =
       err.response?.data?.detail ??
       err.response?.data?.message ??

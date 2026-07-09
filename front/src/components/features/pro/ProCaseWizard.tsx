@@ -245,7 +245,7 @@ export function ProCaseWizard() {
             client={client} scope={scope} consent={consent} onConsent={setConsent}
             onBack={() => setStep(2)} onSubmit={handleSubmit}
             isSubmitting={mutation.isPending}
-            error={mutation.isError ? "Error al crear el caso. Verifica la conexión con el servidor." : undefined}
+            error={mutation.isError ? (mutation.error?.message || "Error al crear el caso. Verifica la conexión con el servidor.") : undefined}
           />
         )}
       </div>

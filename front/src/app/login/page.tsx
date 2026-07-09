@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Spinner } from "@/components/ui/Spinner";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sessionExpired = searchParams.get("expired") === "1";
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -192,6 +194,20 @@ export default function LoginPage() {
                   }}
                 />
               </div>
+
+              {sessionExpired && !error && (
+                <div
+                  style={{
+                    borderLeft: "3px solid #56624b",
+                    padding: "12px 14px",
+                    background: "rgba(86, 98, 75, 0.1)",
+                    color: "#3d4638",
+                    fontSize: "12px",
+                  }}
+                >
+                  Tu sesión expiró. Inicia sesión de nuevo para crear un caso.
+                </div>
+              )}
 
               {error && (
                 <div

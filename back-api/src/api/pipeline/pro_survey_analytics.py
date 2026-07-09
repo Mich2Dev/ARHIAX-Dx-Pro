@@ -20,10 +20,10 @@ def _role_label(role: str) -> str:
 
 def compute_live_scoring(case: Any) -> dict[str, Any]:
     """Scores por rol/dimensión y delta_sigma desde respuestas almacenadas."""
-    sessions = getattr(case, "__dict__", {}).get("survey_sessions")
-    if sessions is None:
-        # Evitar lazy-load en contexto sync (PDF/markdown)
-        return {}
+    try:
+        sessions = getattr(case, "survey_sessions", None)
+    except Exception:
+        sessions = None
     if not sessions:
         return {}
 

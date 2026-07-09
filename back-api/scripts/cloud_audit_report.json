@@ -1,0 +1,135 @@
+[
+  {
+    "case_ref": "case-ffbf1ae77b",
+    "uuid": "ec5796ab-da54-47bb-9bfa-78290f3dc1b7",
+    "client_name": "Agencia Innovación São Caetano",
+    "domain": "Dirección y estrategia pública",
+    "case_status": "approved",
+    "approval_status": "approved",
+    "created_at": "2026-07-08T04:43:20.815040+00:00",
+    "symptom_chars": 118,
+    "hypotheses_count": 3,
+    "survey_status": "closed",
+    "survey_questions": 19,
+    "survey_responses": 3,
+    "pipeline": {
+      "total": 21,
+      "completed": 21,
+      "failed": 0,
+      "pending": 0,
+      "failed_tools": [],
+      "last_completed": "g14_qa_control"
+    },
+    "maturity_score": 50.0,
+    "deliverables_count": 3,
+    "evidence_events": [
+      "case_created",
+      "survey_generation_started",
+      "research_design_started",
+      "research_design_completed",
+      "survey_instrument_validated",
+      "diagnostic_started",
+      "diagnostic_evaluation",
+      "cryptographic_seal",
+      "approval_action",
+      "grammar_lint",
+      "deliverables_generated"
+    ],
+    "diagnosis": "Sin error obvio en metadatos; revisar entregables."
+  },
+  {
+    "case_ref": "case-1b8c4eb343",
+    "uuid": "4a1eb528-9eff-4df3-a819-170f2a4e0d68",
+    "client_name": "Smoke Test",
+    "domain": "Tecnologia",
+    "case_status": "survey_open",
+    "approval_status": "draft",
+    "created_at": "2026-07-08T23:36:30.432861+00:00",
+    "symptom_chars": 39,
+    "hypotheses_count": 1,
+    "survey_status": "open",
+    "survey_questions": 16,
+    "survey_responses": 0,
+    "pipeline": {
+      "total": 12,
+      "completed": 12,
+      "failed": 0,
+      "pending": 0,
+      "failed_tools": [],
+      "last_completed": "g09c_validacion"
+    },
+    "maturity_score": null,
+    "deliverables_count": 0,
+    "evidence_events": [
+      "case_created",
+      "survey_generation_started",
+      "research_design_started",
+      "research_design_completed",
+      "survey_instrument_validated"
+    ],
+    "diagnosis": "Encuesta abierta pero incompleta: 0/3 respuestas."
+  },
+  {
+    "case_ref": "case-3046bf33de",
+    "uuid": "fc8cdf9c-bf29-4813-a86b-704359ea1ad0",
+    "client_name": "CD Global",
+    "domain": "Otro",
+    "case_status": "error",
+    "approval_status": "draft",
+    "created_at": "2026-07-08T23:42:51.193152+00:00",
+    "symptom_chars": 4577,
+    "hypotheses_count": 1,
+    "survey_status": "error",
+    "survey_questions": 0,
+    "survey_responses": 0,
+    "pipeline": {
+      "total": 9,
+      "completed": 0,
+      "failed": 0,
+      "pending": 9,
+      "failed_tools": [],
+      "last_completed": null
+    },
+    "maturity_score": null,
+    "deliverables_count": 0,
+    "evidence_events": [
+      "case_created",
+      "survey_generation_started",
+      "research_design_started",
+      "pipeline_failed"
+    ],
+    "diagnosis": "Pipeline bloqueado (evidencia pipeline_failed, agente G09)"
+  },
+  {
+    "case_ref": "case-b957403514",
+    "uuid": "d1356675-4dc3-49ac-b33f-4c3ab1c3a4b0",
+    "client_name": "CD GLOBAL (IVANIA RUA)",
+    "domain": "Operaciones y producción",
+    "case_status": "survey_open",
+    "approval_status": "draft",
+    "created_at": "2026-07-09T00:26:52.417347+00:00",
+    "symptom_chars": 92,
+    "hypotheses_count": 1,
+    "survey_status": "open",
+    "survey_questions": 19,
+    "survey_responses": 0,
+    "pipeline": {
+      "total": 12,
+      "completed": 12,
+      "failed": 0,
+      "pending": 0,
+      "failed_tools": [],
+      "last_completed": "g09c_validacion"
+    },
+    "maturity_score": null,
+    "deliverables_count": 0,
+    "evidence_events": [
+      "case_created",
+      "survey_generation_started",
+      "research_design_started",
+      "research_design_completed",
+      "survey_instrument_validated"
+    ],
+    "diagnosis": "Encuesta abierta pero incompleta: 0/4 respuestas."
+  }
+]

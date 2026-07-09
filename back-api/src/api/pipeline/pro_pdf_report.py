@@ -626,8 +626,8 @@ def _sec_maturity(data: dict, s: dict) -> list:
     content += _guide(guides.get("maturity", ""), s)
     content += _prose(data, "maturity", s)
     overall = scoring.get("overall_score", "—")
-    bench = scoring.get("benchmark_score", 75)
-    gap_global = int(overall) - int(bench) if str(overall).isdigit() else "—"
+    bench = scoring.get("benchmark_score") or 75
+    gap_global = int(float(overall)) - int(float(bench)) if str(overall).replace(".", "", 1).isdigit() else "—"
     content.append(_p(
         f"Índice global: <b>{overall}/100</b> · Benchmark sectorial: <b>{bench}</b> · "
         f"Brecha: <b>{gap_global} puntos</b>. "
@@ -638,7 +638,7 @@ def _sec_maturity(data: dict, s: dict) -> list:
     rows = [[_th("Dimensión", s), _th("Score", s),
                _th("Benchmark", s), _th("Brecha", s), _th("Lectura", s)]]
     for d in dim_scores:
-        sc = d.get("score", 0)
+        sc = float(d.get("score") or 0)
         reading = "Capacidad estable" if sc >= 70 else ("Brecha relevante" if sc >= 55 else "Riesgo operativo")
         rows.append([
             _p(d.get("dimension") or d.get("name"), s["cell"]),

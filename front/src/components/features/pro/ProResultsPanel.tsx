@@ -191,11 +191,21 @@ export function ProExecutionMetrics({ caseData }: { caseData: any }) {
 }
 
 import { useDownloadProCase } from "@/hooks/useDownload";
+import { apiPro } from "@/lib/api-pro";
 
 // ── Panel de resultados completo ──────────────────────────────────────────────
 export function ProResultsPanel({ caseData, caseId }: { caseData: any; caseId: string }) {
   const { download, loading: downloading, error: downloadError } = useDownloadProCase();
   const canDownload = ["approved", "published"].includes(caseData.case_status);
+
+  async function handleDownload(target: string) {
+    try {
+      await apiPro.post(`/pro/cases/${caseId}/generate-deliverables`);
+    } catch {
+      // Si ya se generaron o grammar gate avisa, igual intentamos descargar
+    }
+    await download(caseId, target, caseData.client_name ?? "diagnostico");
+  }
 
   const fusion  = caseData.fusion_result  ?? {};
   const report  = caseData.report_result  ?? {};
@@ -240,7 +250,7 @@ export function ProResultsPanel({ caseData, caseId }: { caseData: any; caseId: s
           {["markdown", "docx", "pdf"].map(target => (
             <button
               key={target}
-              onClick={() => download(caseId, target, caseData.client_name ?? "diagnostico").catch(() => {})}
+              onClick={() => handleDownload(target).catch(() => {})}
               disabled={!!downloading || !canDownload}
               style={{
                 display: "flex", alignItems: "center", gap: "6px",

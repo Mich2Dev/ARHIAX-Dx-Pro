@@ -13,12 +13,14 @@ import { SurveyAuditPanel } from "@/components/features/diagnostics/SurveyAuditP
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 const STATUS_COLOR: Record<string, string> = {
-  draft: '#706f69', designing: '#243c4f', running: '#243c4f', 
-  review_pending: '#9b6d4d', approved: '#56624b', published: '#56624b', rejected: '#8b3a3a',
+  draft: '#706f69', designing: '#243c4f', survey_open: '#9b6d4d',
+  running: '#243c4f', review_pending: '#9b6d4d', approved: '#56624b',
+  published: '#56624b', rejected: '#8b3a3a', error: '#8b3a3a',
 };
 const STATUS_LABEL: Record<string, string> = {
-  draft: 'Borrador', designing: 'Diseñando', running: 'Ejecutando', 
-  review_pending: 'En revisión', approved: 'Aprobado', published: 'Publicado', rejected: 'Rechazado',
+  draft: 'Borrador', designing: 'Diseñando', survey_open: 'Encuesta abierta',
+  running: 'Ejecutando', review_pending: 'En revisión', approved: 'Aprobado',
+  published: 'Publicado', rejected: 'Rechazado', error: 'Error',
 };
 
 // ── page ──────────────────────────────────────────────────────────────────────
@@ -27,7 +29,7 @@ export default function ProCaseDetailPage() {
   const qc = useQueryClient();
   const [reviewComment, setReviewComment] = useState("");
 
-  const { data: caseData, isLoading, isError, isFetching } = useQuery({
+  const { data: caseData, isLoading, isError: isQueryError, isFetching } = useQuery({
     queryKey: ["pro-case", id],
     queryFn: () => apiPro.get(`/pro/cases/${id}`).then(r => r.data),
     refetchInterval: (q: any) => {
@@ -73,6 +75,12 @@ export default function ProCaseDetailPage() {
     </div>
   );
 
+  if (!caseData && isQueryError) return (
+    <div style={{ padding: "48px 0", textAlign: "center", color: "#706f69", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}>
+      No se pudo cargar el caso. Reintente en unos segundos.
+    </div>
+  );
+
   if (!caseData) return (
     <div style={{ padding: "48px 0", textAlign: "center", color: "#706f69", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}>
       Caso no encontrado.
@@ -82,8 +90,39 @@ export default function ProCaseDetailPage() {
   const c = caseData;
   const statusColor = STATUS_COLOR[c.case_status] ?? "#706f69";
   const isRunning   = c.case_status === "running";
+  const isCaseError = c.case_status === "error";
   const canApprove  = c.case_status === "review_pending";
   const isDone      = ["review_pending", "approved", "published"].includes(c.case_status);
+  const surveyOpen  = c.survey?.status === "open";
+  const surveyError = c.survey?.status === "error";
+
+  const lifecycleSteps = [
+    {
+      id: "design", label: "Arquitectura",
+      failed: surveyError,
+      active: c.case_status === "designing" && !surveyOpen && !surveyError,
+      done: surveyOpen || (["survey_open", "running", "review_pending", "approved", "published", "rejected"].includes(c.case_status) && !surveyError),
+    },
+    {
+      id: "collection", label: "Recolección",
+      failed: false,
+      active: c.case_status === "survey_open" && surveyOpen,
+      done: ["running", "review_pending", "approved", "published", "rejected"].includes(c.case_status)
+        || (isCaseError && (c.survey?.responses_count ?? 0) > 0),
+    },
+    {
+      id: "fusion", label: "Fusión IA",
+      failed: isCaseError && !surveyError,
+      active: isRunning,
+      done: ["review_pending", "approved", "published", "rejected"].includes(c.case_status),
+    },
+    {
+      id: "review", label: "Validación HIL",
+      failed: c.case_status === "rejected",
+      active: c.case_status === "review_pending",
+      done: ["approved", "published"].includes(c.case_status),
+    },
+  ];
 
   return (
     <div style={{ fontFamily: "Manrope, sans-serif" }}>
@@ -131,29 +170,54 @@ export default function ProCaseDetailPage() {
         </Link>
       </div>
 
+      {/* Próximo paso — siempre visible */}
+      {c.next_step && (
+        <div style={{
+          marginTop: "20px", padding: "14px 18px",
+          border: "1px solid rgba(23,23,23,0.12)", borderLeft: "3px solid #56624b",
+          background: "rgba(86,98,75,0.06)",
+        }}>
+          <p style={{ margin: 0, fontSize: "11px", fontFamily: "IBM Plex Mono, monospace", color: "#56624b", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            Próximo paso
+          </p>
+          <p style={{ margin: "6px 0 0", fontSize: "13px", color: "#171717", lineHeight: 1.5 }}>
+            {c.next_step}
+          </p>
+        </div>
+      )}
+
+      {/* Error de pipeline — transparente */}
+      {isCaseError && c.pipeline_error && (
+        <div style={{
+          marginTop: "12px", padding: "16px 18px",
+          border: "1px solid rgba(139,58,58,0.35)", borderLeft: "3px solid #8b3a3a",
+          background: "rgba(139,58,58,0.06)",
+        }}>
+          <p style={{ margin: 0, fontSize: "13px", fontWeight: 600, color: "#8b3a3a" }}>
+            Error del pipeline
+          </p>
+          <p style={{ margin: "8px 0 0", fontSize: "12px", color: "#706f69", lineHeight: 1.55, fontFamily: "IBM Plex Mono, monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            {c.pipeline_error}
+          </p>
+        </div>
+      )}
+
       {/* Lifecycle Stepper */}
       <div style={{ 
         marginTop: "32px", display: "flex", alignItems: "center", gap: "0", 
         background: "#fff", border: "1px solid rgba(23,23,23,0.1)", padding: "20px" 
       }}>
-        {[
-          { id: "design", label: "Arquitectura", 
-            active: c.case_status === "designing" && c.survey?.status !== "open", 
-            done: c.survey?.status === "open" || !["designing", "draft"].includes(c.case_status) },
-          { id: "collection", label: "Recolección", active: c.case_status === "survey_open", done: ["running", "review_pending", "approved", "published", "rejected"].includes(c.case_status) },
-          { id: "fusion", label: "Fusión IA", active: c.case_status === "running", done: ["review_pending", "approved", "published", "rejected"].includes(c.case_status) },
-          { id: "review", label: "Validación HIL", active: c.case_status === "review_pending", done: ["approved", "published", "rejected"].includes(c.case_status) },
-        ].map((step, i, arr) => (
+        {lifecycleSteps.map((step, i, arr) => (
           <div key={step.id} style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{ 
               width: "28px", height: "28px", border: "1px solid #171717", 
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: "11px", fontFamily: "IBM Plex Mono, monospace", fontWeight: 500,
-              background: step.done ? "#56624b" : step.active ? "#171717" : "transparent",
-              color: (step.done || step.active) ? "#f4f1ea" : "#171717",
-              borderColor: step.done ? "#56624b" : "#171717",
+              background: step.failed ? "#8b3a3a" : step.done ? "#56624b" : step.active ? "#171717" : "transparent",
+              color: (step.done || step.active || step.failed) ? "#f4f1ea" : "#171717",
+              borderColor: step.failed ? "#8b3a3a" : step.done ? "#56624b" : "#171717",
             }}>
-              {step.done ? <Check size={14} /> : i + 1}
+              {step.failed ? <X size={14} /> : step.done ? <Check size={14} /> : i + 1}
             </div>
             <div style={{ flex: 1 }}>
               <p style={{ 
@@ -446,7 +510,7 @@ export default function ProCaseDetailPage() {
                         </div>
                       </div>
 
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "40px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "24px" }}>
                         <div style={{ background: "#fff", border: "1px solid rgba(23,23,23,0.1)", padding: "24px", textAlign: "center" }}>
                           <p style={{ margin: 0, fontSize: "42px", fontFamily: "Cormorant Garamond, serif", fontWeight: 500, color: "#243c4f", lineHeight: 1 }}>{c.survey.responses_count}</p>
                           <p style={{ margin: "10px 0 0", fontSize: "11px", fontFamily: "IBM Plex Mono, monospace", color: "#706f69", fontWeight: 600, textTransform: "uppercase" }}>Respuestas</p>
@@ -456,6 +520,21 @@ export default function ProCaseDetailPage() {
                           <p style={{ margin: "10px 0 0", fontSize: "11px", fontFamily: "IBM Plex Mono, monospace", color: "#706f69", fontWeight: 600, textTransform: "uppercase" }}>Mín. Requerido</p>
                         </div>
                       </div>
+
+                      {(c.survey.role_labels?.length ?? 0) > 0 && (
+                        <div style={{ marginBottom: "32px", padding: "16px 20px", background: "#f4f1ea", border: "1px solid rgba(23,23,23,0.06)" }}>
+                          <p style={{ margin: "0 0 10px", fontSize: "11px", fontFamily: "IBM Plex Mono, monospace", color: "#706f69", fontWeight: 600, letterSpacing: "0.08em" }}>
+                            PARTICIPANTES ESPERADOS (1 respuesta por rol)
+                          </p>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                            {(c.survey.role_labels as string[]).map((label: string) => (
+                              <span key={label} style={{ padding: "4px 10px", fontSize: "11px", fontFamily: "IBM Plex Mono, monospace", background: "#fff", border: "1px solid rgba(23,23,23,0.12)", color: "#171717" }}>
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       <button
                         onClick={() => runMutation.mutate()}
@@ -470,6 +549,11 @@ export default function ProCaseDetailPage() {
                         {runMutation.isPending ? "INICIANDO CICLO..." : "LANZAR SÍNTESIS DE DIAGNÓSTICO"}
                       </button>
                       
+                      {c.survey?.responses_count < c.survey?.min_responses && (
+                        <p style={{ margin: "16px 0 0", fontSize: "12px", textAlign: "center", color: "#9b6d4d", fontStyle: "italic" }}>
+                          Faltan {c.survey.min_responses - c.survey.responses_count} respuesta(s) para alcanzar el mínimo ({c.survey.responses_count}/{c.survey.min_responses}).
+                        </p>
+                      )}
                       {c.survey?.responses_count === 0 && (
                         <p style={{ margin: "16px 0 0", fontSize: "12px", textAlign: "center", color: "#8b3a3a", fontStyle: "italic" }}>
                           Se requiere al menos una respuesta para activar los agentes de fusión.
@@ -483,6 +567,25 @@ export default function ProCaseDetailPage() {
                         FINALIZANDO ARQUITECTURA...
                       </p>
                     </div>
+                  )}
+                </div>
+              ) : isCaseError ? (
+                <div style={{ maxWidth: "640px", margin: "0 auto", textAlign: "center" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "56px", height: "56px", background: "rgba(139,58,58,0.1)", color: "#8b3a3a", borderRadius: "50%", marginBottom: "20px" }}>
+                    <X size={28} />
+                  </div>
+                  <h2 style={{ fontFamily: "Cormorant Garamond, serif", fontSize: "32px", color: "#171717", margin: "0 0 12px" }}>
+                    Caso en error
+                  </h2>
+                  <p style={{ color: "#706f69", fontSize: "14px", lineHeight: 1.6, margin: "0 0 24px" }}>
+                    {c.pipeline_error
+                      ? "El pipeline no pudo completarse. Revise el detalle arriba. Los casos con síntoma muy extenso pueden fallar por límite de tokens — acorte el texto o cree un caso nuevo."
+                      : "Ocurrió un error en el procesamiento. Revise la evidencia gobernada."}
+                  </p>
+                  {c.survey?.responses_count > 0 && (
+                    <p style={{ fontSize: "12px", color: "#706f69", fontFamily: "IBM Plex Mono, monospace" }}>
+                      Encuesta: {c.survey.responses_count}/{c.survey.min_responses} respuestas recibidas antes del fallo.
+                    </p>
                   )}
                 </div>
               ) : (
