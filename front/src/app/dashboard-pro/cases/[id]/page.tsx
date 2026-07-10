@@ -9,6 +9,7 @@ import { formatDate } from "@/lib/utils";
 import { Loader2, ChevronLeft, Check, X, Send, Cpu, RefreshCw, ShieldCheck, CheckCircle } from "lucide-react";
 import { ProFusionPipeline } from "@/components/features/pro/ProFusionPipeline";
 import { ProResultsPanel, ProGovernancePanel, ProAutonometer, ProExecutionMetrics } from "@/components/features/pro/ProResultsPanel";
+import { ProPhenomenonPanel } from "@/components/features/pro/ProPhenomenonPanel";
 import { SurveyAuditPanel } from "@/components/features/diagnostics/SurveyAuditPanel";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ export default function ProCaseDetailPage() {
       const status = data?.case_status;
       // Always poll aggressively when running or designing
       if (status === "running") return 5000;
+      if (data?.phenomenon?.status === "running") return 4000;
       if (status === "survey_open" || data?.survey?.status === "designing") return 4000;
       // If no data yet (first load failed), keep trying
       if (!data) return 6000;
@@ -67,6 +69,16 @@ export default function ProCaseDetailPage() {
     onError: (err: any) => {
       alert(err.response?.data?.detail || "Error al iniciar el diagnóstico.");
     }
+  });
+
+  const analyzeMutation = useMutation({
+    mutationFn: () => apiPro.post(`/pro/cases/${id}/analyze`).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pro-case", id] });
+    },
+    onError: (err: any) => {
+      alert(err.message || "Error al analizar el fenómeno.");
+    },
   });
 
   if (isLoading) return (
@@ -154,9 +166,9 @@ export default function ProCaseDetailPage() {
             <span style={{ fontSize: "12px", color: "#706f69" }}>{c.domain}</span>
             <span style={{ fontSize: "12px", color: "#706f69" }}>{formatDate(c.created_at)}</span>
           </div>
-          {c.input_payload?.symptom && (
+          {(c.input_payload?.symptom || c.input_payload?.extra?.symptom) && (
             <p style={{ margin: "16px 0 0", fontSize: "14px", color: "#222522", lineHeight: 1.6, maxWidth: "800px" }}>
-              {c.input_payload.symptom}
+              {c.input_payload.symptom || c.input_payload.extra?.symptom}
             </p>
           )}
         </div>
@@ -168,6 +180,16 @@ export default function ProCaseDetailPage() {
         }}>
           <ChevronLeft size={14} /> Casos
         </Link>
+      </div>
+
+      {/* Motor de fenómeno — abordaje Governex */}
+      <div style={{ marginTop: "24px" }}>
+        <ProPhenomenonPanel
+          phenomenon={c.phenomenon}
+          caseId={id}
+          analyzing={analyzeMutation.isPending}
+          onAnalyze={() => analyzeMutation.mutate()}
+        />
       </div>
 
       {/* Próximo paso — siempre visible */}
@@ -436,7 +458,7 @@ export default function ProCaseDetailPage() {
           {/* Resultados — solo cuando hay datos */}
           {isDone && (c.fusion_result || c.report_result) && (
             <div className="flex flex-col gap-4 mt-6">
-              <ProResultsPanel caseData={c} caseId={id} />
+              <ProResultsPanel caseData={c} caseId={id} onRefresh={() => qc.invalidateQueries({ queryKey: ["pro-case", id] })} />
               
               {c.survey?.token && (
                 <SurveyAuditPanel surveyToken={c.survey.token} isPro={true} />
@@ -583,9 +605,25 @@ export default function ProCaseDetailPage() {
                       : "Ocurrió un error en el procesamiento. Revise la evidencia gobernada."}
                   </p>
                   {c.survey?.responses_count > 0 && (
-                    <p style={{ fontSize: "12px", color: "#706f69", fontFamily: "IBM Plex Mono, monospace" }}>
+                    <p style={{ fontSize: "12px", color: "#706f69", fontFamily: "IBM Plex Mono, monospace", margin: "0 0 20px" }}>
                       Encuesta: {c.survey.responses_count}/{c.survey.min_responses} respuestas recibidas antes del fallo.
                     </p>
+                  )}
+                  {c.survey?.responses_count > 0 && (
+                    <button
+                      onClick={() => runMutation.mutate()}
+                      disabled={runMutation.isPending}
+                      style={{
+                        height: "48px", padding: "0 28px", background: runMutation.isPending ? "rgba(23,23,23,0.1)" : "#171717",
+                        color: runMutation.isPending ? "#706f69" : "#f4f1ea", border: "none", fontSize: "12px",
+                        fontFamily: "IBM Plex Mono, monospace", fontWeight: 600, letterSpacing: "0.08em",
+                        cursor: runMutation.isPending ? "not-allowed" : "pointer",
+                        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "10px",
+                      }}
+                    >
+                      {runMutation.isPending ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <Cpu size={16} />}
+                      {runMutation.isPending ? "REINTENTANDO…" : "REINTENTAR SÍNTESIS"}
+                    </button>
                   )}
                 </div>
               ) : (

@@ -1,0 +1,16 @@
+{
+  "case_id": "case-b957403514",
+  "client_name": "CD GLOBAL (IVANIA RUA)",
+  "survey_mode": "multi_rater",
+  "subprocess": "los procesos de cotizacion, requisicion, liquidacion y gestion del mantenimiento un sistema agentico",
+  "validation_gaps": [
+    "Coherencia g03_cienciometro: poca relación con el síntoma del cliente (0/2 términos clave)",
+    "Coherencia g04_cartografo: contenido ajeno al caso (hr_onboarding): el intake no menciona este tema",
+    "Coherencia g06_bpmn_architect: contenido ajeno al caso (vacation): el intake no menciona este tema",
+    "Coherencia g12_hallazgos: contenido ajeno al caso (credit): el intake no menciona este tema",
+    "Coherencia g13_redactor: contenido ajeno al caso (credit): el intake no menciona este tema"
+  ],
+  "production_would_block_pdf": true,
+  "triangulation_rows": 1,
+  "instrument_config": "Modo: multi-rater · roles: Estratégico, Operativo, Táctico, Planeación · dimensiones: strategy, process, technology, people"
+}

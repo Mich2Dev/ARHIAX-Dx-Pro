@@ -80,8 +80,24 @@ class PipelineExecutor:
         last_error: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
-                return await self._call_gemini(tool_name, prompt, model, max_tokens, temperature)
-            except (PipelineStageFailureError, PipelineLLMUnavailableError):
+                return await self._call_gemini(
+                    tool_name, prompt, model, max_tokens, temperature, attempt=attempt
+                )
+            except PipelineLLMUnavailableError:
+                raise
+            except PipelineStageFailureError as exc:
+                if attempt < MAX_RETRIES - 1 and _is_retryable_llm_output_error(exc):
+                    delay = RETRY_DELAYS[attempt]
+                    log.warning(
+                        "Tool %s model %s attempt %d output error (%s), retrying in %ds...",
+                        tool_name,
+                        model,
+                        attempt + 1,
+                        exc.reason[:80],
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
                 raise
             except Exception as exc:
                 last_error = exc
@@ -109,15 +125,17 @@ class PipelineExecutor:
         )
 
     async def _call_gemini(
-        self, tool_name: str, prompt: str, model: str, max_tokens: int, temperature: float
+        self, tool_name: str, prompt: str, model: str, max_tokens: int, temperature: float,
+        attempt: int = 0,
     ) -> dict:
         t0 = time.monotonic()
+        effective_temp = max(0.1, float(temperature) - (attempt * 0.12))
         response = await self._client.aio.models.generate_content(
             model=model,
             contents=prompt,
             config=genai_types.GenerateContentConfig(
                 max_output_tokens=min(max_tokens, 16384),
-                temperature=temperature,
+                temperature=effective_temp,
                 response_mime_type="application/json",
                 thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
             ),
@@ -167,6 +185,21 @@ def _fix_encoding(text: str) -> str:
         return text.encode("latin1").decode("utf-8")
     except (UnicodeDecodeError, UnicodeEncodeError):
         return text
+
+
+def _is_retryable_llm_output_error(exc: PipelineStageFailureError) -> bool:
+    reason = exc.reason.lower()
+    return any(
+        k in reason
+        for k in (
+            "json inválido",
+            "json invalido",
+            "truncada",
+            "respuesta vacía",
+            "respuesta vacia",
+            "incompleto",
+        )
+    )
 
 
 def _parse_json(raw: str) -> dict:

@@ -36,8 +36,8 @@ WORKDIR /app
 # Configurar Postgres y Supervisor
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY start-cloudrun.sh /start-cloudrun.sh
-RUN chmod +x /start-cloudrun.sh
-RUN chmod +x /app/start-pg.sh
+RUN sed -i 's/\r$//' /start-cloudrun.sh /app/start-pg.sh \
+    && chmod +x /start-cloudrun.sh /app/start-pg.sh
 
 # Crear carpetas de datos necesarias
 RUN mkdir -p /app/ARHIAX-Dx-Pro/data/cases /app/ARHIAX-Dx-Pro/data/exports /app/back/var

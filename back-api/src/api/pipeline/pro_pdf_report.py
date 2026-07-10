@@ -551,9 +551,13 @@ def _sec_methodology(data: dict, s: dict) -> list:
     for item in m.get("evaluates", []):
         content.append(_p(f"• {item}", s["body"]))
     eng = data.get("engagement") or {}
-    roles = eng.get("roles") or []
-    dims = eng.get("dimensions") or []
-    if roles or dims:
+    inst = m.get("instrument_config")
+    if inst:
+        content.append(Spacer(1, GAP))
+        content.append(_p(f"<b>Configuración del instrumento:</b> {inst}", s["small"]))
+    elif eng.get("roles") or eng.get("dimensions"):
+        roles = eng.get("roles") or []
+        dims = eng.get("dimensions") or []
         content.append(Spacer(1, GAP))
         content.append(_p(
             f"<b>Configuración del instrumento:</b> roles {', '.join(roles)} · "
@@ -1063,13 +1067,13 @@ def _sec_narrative_governance(data: dict, case: Any, s: dict) -> list:
     return _section("5.2", "Narrativa y gobernanza", "Sintesis integrada y trazabilidad PMEL/ATK", content, s)
 
 
-def build_pro_pdf_dense(case: Any, evidence: list | None = None) -> bytes:
+def build_pro_pdf_dense(case: Any, evidence: list | None = None, *, allow_incomplete: bool = False) -> bytes:
     if not PDF_OK:
         raise RuntimeError("reportlab no instalado")
 
     data = build_pro_report_data(case)
     missing = validate_report_for_deliverables(data, case)
-    if missing:
+    if missing and not allow_incomplete:
         raise RuntimeError(
             "Informe incompleto — no se genera PDF sin datos reales del pipeline: "
             + "; ".join(missing)

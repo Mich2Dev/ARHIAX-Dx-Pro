@@ -33,6 +33,8 @@
       "cryptographic_seal",
       "approval_action",
       "grammar_lint",
+      "deliverables_generated",
+      "grammar_lint",
       "deliverables_generated"
     ],
     "diagnosis": "Sin error obvio en metadatos; revisar entregables."
@@ -105,31 +107,43 @@
     "uuid": "d1356675-4dc3-49ac-b33f-4c3ab1c3a4b0",
     "client_name": "CD GLOBAL (IVANIA RUA)",
     "domain": "Operaciones y producción",
-    "case_status": "survey_open",
-    "approval_status": "draft",
+    "case_status": "approved",
+    "approval_status": "approved",
     "created_at": "2026-07-09T00:26:52.417347+00:00",
     "symptom_chars": 92,
     "hypotheses_count": 1,
-    "survey_status": "open",
+    "survey_status": "closed",
     "survey_questions": 19,
-    "survey_responses": 0,
+    "survey_responses": 1,
     "pipeline": {
-      "total": 12,
-      "completed": 12,
+      "total": 21,
+      "completed": 21,
       "failed": 0,
       "pending": 0,
       "failed_tools": [],
-      "last_completed": "g09c_validacion"
+      "last_completed": "g14_qa_control"
     },
-    "maturity_score": null,
-    "deliverables_count": 0,
+    "maturity_score": 50,
+    "deliverables_count": 3,
     "evidence_events": [
       "case_created",
       "survey_generation_started",
       "research_design_started",
       "research_design_completed",
-      "survey_instrument_validated"
+      "survey_instrument_validated",
+      "diagnostic_started",
+      "diagnostic_evaluation",
+      "cryptographic_seal",
+      "approval_action",
+      "grammar_lint",
+      "deliverables_generated",
+      "grammar_lint",
+      "deliverables_generated",
+      "grammar_lint",
+      "deliverables_generated",
+      "grammar_lint",
+      "deliverables_generated"
     ],
-    "diagnosis": "Encuesta abierta pero incompleta: 0/4 respuestas."
+    "diagnosis": "Sin error obvio en metadatos; revisar entregables."
   }
 ]

@@ -29,8 +29,8 @@ MODEL_ROUTING: dict[str, dict] = {
     "scoring_engine":  {"model": "gemini-2.5-flash", "max_tokens": 8192,  "temperature": 0.3},
     # Bayesian — low temp, max precision
     "g11a_bayesiano": {"model": "gemini-2.5-flash", "max_tokens": 8192,  "temperature": 0.1},
-    # Executive writing
-    "g13_redactor":   {"model": "gemini-2.5-flash", "max_tokens": 16384, "temperature": 0.7},
+    # Executive writing — JSON grande: temperatura baja para evitar JSON inválido
+    "g13_redactor":   {"model": "gemini-2.5-flash", "max_tokens": 16384, "temperature": 0.35},
     # QA & assembly
     "g14_qa_control":  {"model": "gemini-2.5-flash", "max_tokens": 16384, "temperature": 0.2},
     "docx_generator":  {"model": "gemini-2.5-flash", "max_tokens": 16384, "temperature": 0.2},

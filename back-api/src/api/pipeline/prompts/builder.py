@@ -99,7 +99,9 @@ def build_prompt(tool_name: str, context: dict) -> str:
                 except (json.JSONDecodeError, Exception):
                     pass  # keep original
 
-        if isinstance(v, (dict, list)):
+        if isinstance(v, set):
+            serialised = json.dumps(sorted(v), ensure_ascii=False, indent=2)
+        elif isinstance(v, (dict, list)):
             serialised = json.dumps(v, ensure_ascii=False, indent=2)
         else:
             serialised = str(v)

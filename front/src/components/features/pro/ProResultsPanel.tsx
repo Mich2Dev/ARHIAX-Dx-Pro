@@ -194,9 +194,37 @@ import { useDownloadProCase } from "@/hooks/useDownload";
 import { apiPro } from "@/lib/api-pro";
 
 // ── Panel de resultados completo ──────────────────────────────────────────────
-export function ProResultsPanel({ caseData, caseId }: { caseData: any; caseId: string }) {
+export function ProResultsPanel({
+  caseData,
+  caseId,
+  onRefresh,
+}: {
+  caseData: any;
+  caseId: string;
+  onRefresh?: () => void;
+}) {
   const { download, loading: downloading, error: downloadError } = useDownloadProCase();
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenMessage, setRegenMessage] = useState<string | null>(null);
   const canDownload = ["approved", "published"].includes(caseData.case_status);
+  const hasSurveyResponses = (caseData.survey?.responses_count ?? 0) > 0;
+
+  async function handleRegenerate() {
+    setRegenerating(true);
+    setRegenMessage(null);
+    try {
+      const res = await apiPro.post(`/pro/cases/${caseId}/regenerate-report`);
+      setRegenMessage(res.data?.message ?? "Regeneración iniciada.");
+      onRefresh?.();
+    } catch (e: unknown) {
+      const msg = e && typeof e === "object" && "response" in e
+        ? String((e as { response?: { data?: { detail?: string } } }).response?.data?.detail ?? "Error al regenerar")
+        : "Error al regenerar el informe";
+      setRegenMessage(msg);
+    } finally {
+      setRegenerating(false);
+    }
+  }
 
   async function handleDownload(target: string) {
     try {
@@ -242,11 +270,32 @@ export function ProResultsPanel({ caseData, caseId }: { caseData: any; caseId: s
             </p>
           )}
           {downloadError && (
-            <p style={{ margin: 0, fontSize: "10px", color: "#e8b4b4", fontFamily: "IBM Plex Mono, monospace", maxWidth: "280px", textAlign: "right" }}>
+            <p style={{ margin: 0, fontSize: "10px", color: "#e8b4b4", fontFamily: "IBM Plex Mono, monospace", maxWidth: "320px", textAlign: "right" }}>
               {downloadError}
             </p>
           )}
-          <div style={{ display: "flex", gap: "8px" }}>
+          {regenMessage && (
+            <p style={{ margin: 0, fontSize: "10px", color: "#d4c4a8", fontFamily: "IBM Plex Mono, monospace", maxWidth: "320px", textAlign: "right" }}>
+              {regenMessage}
+            </p>
+          )}
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {hasSurveyResponses && (
+            <button
+              type="button"
+              onClick={() => handleRegenerate().catch(() => {})}
+              disabled={regenerating || caseData.case_status === "running"}
+              style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                minHeight: "38px", border: "1px solid rgba(244,241,234,0.35)", padding: "8px 14px",
+                background: "transparent", color: "#f4f1ea", fontSize: "11px",
+                fontFamily: "IBM Plex Mono, monospace", cursor: regenerating ? "wait" : "pointer",
+              }}
+            >
+              {regenerating ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> : <Activity size={11} />}
+              Regenerar informe
+            </button>
+          )}
           {["markdown", "docx", "pdf"].map(target => (
             <button
               key={target}

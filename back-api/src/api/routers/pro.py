@@ -34,9 +34,19 @@ from api.models import User
 from api.models.pro import ProCase, ProEvidence, ProSurveySession, ProSurveyResponse
 from api.pipeline.hypothesis_pack import build_hypothesis_pack, g05_from_paquete
 from api.pipeline.llm_guard import assert_pipeline_stages_ok, stages_failed
+from api.pipeline.pro_survey_mode import (
+    min_responses_for_mode,
+    resolve_survey_mode,
+    roles_for_mode,
+    survey_mode_label,
+)
 from api.pipeline.pro_survey_roles import (
     available_role_labels,
     normalize_role_options,
+)
+from api.pipeline.phenomenon_engine import (
+    phenomenon_analysis_for_detail,
+    run_phenomenon_analysis,
 )
 from api.services.grammar_gate import lint_markdown
 
@@ -75,13 +85,22 @@ def _case_operational_next_step(case: ProCase, survey_info: dict | None) -> str:
     if status == "survey_open":
         rc = (survey_info or {}).get("responses_count", 0)
         mr = (survey_info or {}).get("min_responses", 3)
+        mode = (survey_info or {}).get("survey_mode") or "multi_rater"
         labels = (survey_info or {}).get("role_labels") or []
+        if mode == "single_rater":
+            if rc < mr:
+                return f"Comparta el enlace con el decisor. Progreso: {rc}/{mr} respuesta. Luego lance la síntesis."
+            return "Tiene la respuesta del decisor. Puede lanzar la síntesis de diagnóstico."
         roles_hint = f" ({', '.join(labels)})" if labels else ""
         if rc < mr:
             return f"Comparta el enlace con cada participante{roles_hint}. Progreso: {rc}/{mr} respuestas. Luego lance la síntesis."
         return f"Tiene {rc}/{mr} respuestas. Puede lanzar la síntesis de diagnóstico."
     if status == "running":
-        return "Espere a que termine el ciclo de fusión IA. Esta pantalla se actualiza sola."
+        return "El sistema está procesando el diagnóstico o regenerando el informe. Esta pantalla se actualiza sola."
+    payload = case.input_payload or {}
+    phenom = payload.get("phenomenon_analysis") or {}
+    if phenom.get("status") == "running":
+        return "Analizando el fenómeno del caso (motor Governex P01–P07). Espere unos minutos."
     if status == "review_pending":
         return "Revise los resultados y apruebe o rechace el diagnóstico (HIL)."
     if status == "approved":
@@ -125,6 +144,7 @@ class CreateCaseIn(BaseModel):
     engagement_id: str | None = None
     client_name: str
     domain: str
+    survey_mode: str | None = None  # single_rater | multi_rater
     roles: list[str] = ["executive", "operations", "technology"]
     dimensions: list[str] = ["strategy", "process", "technology"]
     hypotheses: list[str] = []
@@ -213,6 +233,11 @@ def _case_detail(c: ProCase) -> dict:
             "status": s.status,
             "responses_count": s.responses_count,
             "min_responses": s.min_responses,
+            "survey_mode": (c.input_payload or {}).get("survey_mode")
+            or resolve_survey_mode(None, s.roles),
+            "survey_mode_label": survey_mode_label(
+                (c.input_payload or {}).get("survey_mode") or resolve_survey_mode(None, s.roles)
+            ),
             "survey_url": f"/survey/pro/{s.token}",
             "roles": s.roles,
             "role_labels": [o["label"] for o in role_options],
@@ -242,6 +267,7 @@ def _case_detail(c: ProCase) -> dict:
         "stages": c.pipeline_stages or [],
         "pipeline_error": pipeline_error,
         "next_step": _case_operational_next_step(c, survey_info),
+        "phenomenon": phenomenon_analysis_for_detail(c.input_payload),
     }
 
 
@@ -343,6 +369,154 @@ def _compute_scores_from_responses(responses: list[ProSurveyResponse], questions
         "role_coverage": list(scores_by_role.keys()),
         "total_responses": len(responses),
     }
+
+
+async def _run_phenomenon_analysis_background(case_id: str) -> None:
+    """Ejecuta P01–P07 y persiste en input_payload.phenomenon_analysis."""
+    from api.pipeline.executor import PipelineExecutor
+    from api.config import settings as api_settings
+    from sqlalchemy.orm.attributes import flag_modified
+
+    SessionLocal = get_async_session_local()
+    async with SessionLocal() as db:
+        case = await db.get(ProCase, case_id)
+        if not case:
+            return
+
+        payload = dict(case.input_payload or {})
+        payload["phenomenon_analysis"] = {
+            "version": "1.0",
+            "status": "running",
+            "stages": [],
+        }
+        case.input_payload = payload
+        flag_modified(case, "input_payload")
+        await db.commit()
+
+        try:
+            executor = PipelineExecutor(api_settings)
+            analysis = await run_phenomenon_analysis(
+                executor,
+                client_name=case.client_name,
+                domain=case.domain,
+                input_payload=case.input_payload,
+            )
+            payload = dict(case.input_payload or {})
+            payload["phenomenon_analysis"] = analysis
+            case.input_payload = payload
+            flag_modified(case, "input_payload")
+            _write_evidence(
+                db, case, "phenomenon_analysis_completed",
+                outcome="PERMIT" if analysis.get("summary", {}).get("gates_passed") else "DENY",
+                payload={
+                    "phenomenon_named": (analysis.get("summary") or {}).get("phenomenon_named"),
+                    "gates_passed": (analysis.get("summary") or {}).get("gates_passed"),
+                },
+            )
+            await db.commit()
+        except Exception as exc:
+            payload = dict(case.input_payload or {})
+            phen = payload.get("phenomenon_analysis") or {}
+            phen["status"] = "failed"
+            phen["error"] = str(exc)[:500]
+            payload["phenomenon_analysis"] = phen
+            case.input_payload = payload
+            flag_modified(case, "input_payload")
+            _write_evidence(
+                db, case, "phenomenon_analysis_failed",
+                outcome="DENY",
+                payload={"error": str(exc)[:240]},
+            )
+            await db.commit()
+
+
+async def _regenerate_report_background(case_id: str) -> None:
+    """
+    El sistema regenera investigación (G01-G08) y síntesis (G10-G14) con intake y
+    respuestas ya guardadas — flujo producto, sin intervención manual.
+    """
+    from api.pipeline.executor import PipelineExecutor
+    from api.config import settings as api_settings
+    from api.pipeline.pro_pipeline_tools import (
+        RESEARCH_DESIGN_TOOLS,
+        build_pro_context,
+        extract_stage_outputs,
+        make_stage_list,
+        persist_research_design,
+        run_tool_chain,
+    )
+    from api.pipeline.llm_guard import assert_pipeline_stages_ok
+    from sqlalchemy.orm.attributes import flag_modified
+
+    SessionLocal = get_async_session_local()
+    async with SessionLocal() as db:
+        result = await db.execute(
+            select(ProCase)
+            .options(
+                selectinload(ProCase.survey_sessions).selectinload(ProSurveySession.responses),
+                selectinload(ProCase.evidence_entries),
+            )
+            .where(ProCase.id == case_id)
+        )
+        case = result.scalar_one_or_none()
+        if not case:
+            return
+
+        sessions = case.survey_sessions or []
+        total_responses = sum(s.responses_count for s in sessions)
+        if total_responses == 0:
+            case.case_status = "error"
+            case.fusion_result = {
+                "outcome": "ERROR",
+                "error": "No hay respuestas de encuesta para regenerar el informe.",
+            }
+            await db.commit()
+            return
+
+        try:
+            executor = PipelineExecutor(api_settings)
+            payload = case.input_payload or {}
+            context = build_pro_context(
+                client_name=case.client_name,
+                domain=case.domain,
+                input_payload=payload,
+            )
+
+            _write_evidence(db, case, "report_regeneration_started", outcome="PERMIT", agent="G01-G14")
+            await db.commit()
+
+            research_stages = make_stage_list(RESEARCH_DESIGN_TOOLS)
+            _, research_stages = await run_tool_chain(
+                executor, RESEARCH_DESIGN_TOOLS, context, research_stages, stage_offset=0,
+            )
+            assert_pipeline_stages_ok(research_stages, RESEARCH_DESIGN_TOOLS)
+
+            research_outputs = extract_stage_outputs(research_stages)
+            case.input_payload = persist_research_design(payload, research_outputs)
+            case.pipeline_stages = list(research_stages)
+            flag_modified(case, "input_payload")
+            flag_modified(case, "pipeline_stages")
+            case.deliverables = []
+            await db.commit()
+
+            _write_evidence(
+                db, case, "research_design_regenerated", outcome="PERMIT", agent="G01-G08",
+                payload={"tools": RESEARCH_DESIGN_TOOLS},
+            )
+            await db.commit()
+
+        except Exception as exc:
+            case.case_status = "error"
+            case.pmel_outcome = "DENY"
+            case.fusion_result = {"outcome": "ERROR", "error": str(exc)}
+            _write_evidence(
+                db, case, "report_regeneration_failed", outcome="DENY",
+                payload={"error": str(exc), "phase": "research_design"},
+            )
+            await db.commit()
+            return
+
+    await _run_diagnostic_background(case_id)
 
 
 async def _run_diagnostic_background(case_id: str) -> None:
@@ -715,6 +889,10 @@ async def create_case(
     if not body.consent.get("consents", {}).get("T1"):
         raise HTTPException(status_code=400, detail="Consentimiento T1 requerido.")
 
+    survey_mode = resolve_survey_mode(body.survey_mode, body.roles)
+    effective_roles = roles_for_mode(survey_mode, body.roles)
+    min_resp = min_responses_for_mode(survey_mode, effective_roles)
+
     engagement_id = body.engagement_id or f"eng-{uuid.uuid4().hex[:8]}"
     trace = _trace_id()
 
@@ -736,7 +914,8 @@ async def create_case(
         pmel_outcome="PENDING",
         consent=body.consent,
         input_payload={
-            "roles": body.roles, "dimensions": body.dimensions,
+            "survey_mode": survey_mode,
+            "roles": effective_roles, "dimensions": body.dimensions,
             "hypotheses": body.hypotheses,
             "paquete_hipotesis": paquete,
             "field_data": field_data,
@@ -754,12 +933,12 @@ async def create_case(
         id=_new_id(),
         case_id=case.id,
         token=_survey_token(),
-        roles=body.roles,
+        roles=effective_roles,
         dimensions=body.dimensions,
         questions={},
         status="designing",  # Estado intermedio mientras los agentes trabajan
         responses_count=0,
-        min_responses=len(body.roles),
+        min_responses=min_resp,
     )
     db.add(survey)
     await db.commit()
@@ -772,6 +951,8 @@ async def create_case(
     
     # 3. Lanzar la generación en segundo plano (Ahora que el caso ya existe físicamente en el DB)
     survey_payload = body.model_dump()
+    survey_payload["roles"] = effective_roles
+    survey_payload["survey_mode"] = survey_mode
     survey_payload["paquete_hipotesis"] = paquete
     survey_payload["field_data"] = field_data
     background_tasks.add_task(_generate_survey_background, case.id, survey.id, survey_payload)
@@ -1019,6 +1200,98 @@ async def run_diagnostic(
     return {"case_id": case_id, "case_status": "running", "message": f"Diagnóstico iniciado con {total_responses} respuestas."}
 
 
+@router.post("/cases/{case_id}/regenerate-report")
+async def regenerate_report(
+    case_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    El sistema regenera el informe completo (G01-G08 + G10-G14) usando el intake y
+  las respuestas ya guardadas. Tras completar, el caso queda en revisión HIL.
+    """
+    result = await db.execute(
+        select(ProCase)
+        .options(selectinload(ProCase.survey_sessions))
+        .where(ProCase.id == case_id)
+    )
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+
+    sessions = case.survey_sessions or []
+    total_responses = sum(s.responses_count for s in sessions)
+    if total_responses == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No hay respuestas de encuesta. El informe se genera a partir de datos reales recolectados.",
+        )
+
+    if case.case_status == "running":
+        raise HTTPException(status_code=409, detail="Ya hay una regeneración en curso.")
+
+    case.case_status = "running"
+    case.deliverables = []
+    _write_evidence(
+        db, case, "report_regeneration_requested", outcome="PERMIT",
+        payload={"requested_by": current_user.email, "responses": total_responses},
+    )
+    await db.commit()
+
+    background_tasks.add_task(_regenerate_report_background, case_id)
+
+    return {
+        "case_id": case_id,
+        "case_status": "running",
+        "message": (
+            "El sistema está regenerando el informe con validación de coherencia. "
+            "Cuando termine, apruebe de nuevo y descargue el PDF desde el panel."
+        ),
+    }
+
+
+@router.post("/cases/{case_id}/analyze")
+async def analyze_phenomenon(
+    case_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Motor de fenómeno (P01–P07): abordaje estilo Governex antes del pipeline legacy.
+    Persiste en input_payload.phenomenon_analysis.
+    """
+    case = await db.get(ProCase, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+
+    if case.case_status == "running":
+        raise HTTPException(status_code=409, detail="Hay un proceso en curso. Espere a que termine.")
+
+    phen = (case.input_payload or {}).get("phenomenon_analysis") or {}
+    if phen.get("status") == "running":
+        raise HTTPException(status_code=409, detail="Ya hay un análisis de fenómeno en curso.")
+
+    _write_evidence(
+        db, case, "phenomenon_analysis_started",
+        outcome="PERMIT",
+        payload={"requested_by": current_user.email},
+    )
+    await db.commit()
+
+    background_tasks.add_task(_run_phenomenon_analysis_background, case_id)
+
+    return {
+        "case_id": case_id,
+        "phenomenon_status": "running",
+        "message": (
+            "Analizando fenómeno (epoqué, convergencia, contradicción, kill critic). "
+            "La pantalla se actualiza sola."
+        ),
+    }
+
+
 @router.post("/cases/{case_id}/approval")
 async def approve_case(
     case_id: str,
@@ -1205,7 +1478,10 @@ async def generate_deliverables(
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "No se pueden generar entregables: faltan datos reales del pipeline.",
+                "message": (
+                    "El sistema no puede generar el informe: hay secciones incoherentes "
+                    "o incompletas. Use «Regenerar informe» para que los agentes lo reconstruyan."
+                ),
                 "missing_sections": report_gaps,
             },
         )
@@ -1252,6 +1528,76 @@ async def generate_deliverables(
         "grammar": grammar_report,
         "message": "Entregables generados.",
     }
+
+
+def _phenomenon_download_name(case: ProCase, suffix: str) -> str:
+    import re
+    safe = re.sub(r"[^\w\s-]", "", case.client_name, flags=re.UNICODE)
+    safe = re.sub(r"\s+", "_", safe.strip()).lower()[:50] or "caso"
+    return f"{safe}_{suffix}.md"
+
+
+def _require_phenomenon_complete(case: ProCase) -> dict:
+    analysis = (case.input_payload or {}).get("phenomenon_analysis") or {}
+    status = analysis.get("status")
+    if status not in ("completed", "completed_with_warnings"):
+        raise HTTPException(
+            status_code=409,
+            detail="Ejecute «Analizar fenómeno» y espere a que termine antes de descargar documentos.",
+        )
+    return analysis
+
+
+@router.get("/cases/{case_id}/download/phenomenon-internal")
+async def download_phenomenon_internal(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Análisis interno (tipo Siete Puntas) derivado del motor P01–P07."""
+    import io
+    from api.pipeline.pro_phenomenon_documents import build_internal_phenomenon_markdown
+
+    case = await db.get(ProCase, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    _require_phenomenon_complete(case)
+    try:
+        md = build_internal_phenomenon_markdown(case)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    fname = _phenomenon_download_name(case, "fenomeno_interno")
+    return StreamingResponse(
+        io.BytesIO(md.encode("utf-8")),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@router.get("/cases/{case_id}/download/phenomenon-discovery")
+async def download_phenomenon_discovery(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Formulario de descubrimiento derivado del fenómeno."""
+    import io
+    from api.pipeline.pro_phenomenon_documents import build_discovery_form_markdown
+
+    case = await db.get(ProCase, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    _require_phenomenon_complete(case)
+    try:
+        md = build_discovery_form_markdown(case)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    fname = _phenomenon_download_name(case, "descubrimiento")
+    return StreamingResponse(
+        io.BytesIO(md.encode("utf-8")),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @router.get("/cases/{case_id}/download/{target}")
@@ -1308,7 +1654,10 @@ async def download_deliverable(
             raise HTTPException(
                 status_code=409,
                 detail={
-                    "message": "No se puede generar el PDF: faltan datos del pipeline.",
+                    "message": (
+                        "El sistema no puede generar el PDF: hay contenido incoherente con el caso. "
+                        "Use «Regenerar informe» en el panel de resultados."
+                    ),
                     "missing_sections": report_gaps,
                 },
             )

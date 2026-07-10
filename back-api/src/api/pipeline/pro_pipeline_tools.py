@@ -3,10 +3,25 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 
 from api.pipeline.hypothesis_pack import build_hypothesis_pack, g05_from_paquete
 from api.pipeline.llm_guard import PipelineStageFailureError
+from api.pipeline.pro_coherence import build_case_anchors, derive_subprocess, validate_output_coherence
+from api.pipeline.pro_survey_mode import (
+    roles_for_mode,
+    resolve_survey_mode,
+    survey_mode_instructions,
+)
+from api.pipeline.pro_g13_fallback import (
+    build_g13_fallback_from_g12,
+    build_g13_fallback_minimal,
+    coerce_tool_dict,
+)
+from api.pipeline.pro_survey_roles import available_role_labels
+
+log = logging.getLogger("arhiax.pipeline.pro")
 
 RESEARCH_DESIGN_TOOLS: list[str] = [
     "g01_receptor",
@@ -108,15 +123,30 @@ def build_pro_context(
     def _field(key: str, default: Any = "") -> Any:
         return extra.get(key) or payload.get(key) or body.get(key) or default
 
+    survey_mode = resolve_survey_mode(
+        body.get("survey_mode") or payload.get("survey_mode"),
+        body.get("roles") or payload.get("roles"),
+    )
+    roles = roles_for_mode(
+        survey_mode,
+        body.get("roles") or payload.get("roles"),
+    )
+    dimensions = body.get("dimensions") or payload.get("dimensions") or ["strategy", "process", "technology"]
+
+    sector = _field("sector")
+    diagnostic_area = domain or body.get("domain") or payload.get("domain") or ""
     symptom = _field("symptom")
     if not symptom and paquete:
         symptom = str(paquete[0].get("enunciado") or "")
-
-    roles = body.get("roles") or payload.get("roles") or ["executive", "operations", "technology"]
-    dimensions = body.get("dimensions") or payload.get("dimensions") or ["strategy", "process", "technology"]
+    expected_outcome = _field("expected_outcome")
+    subprocess = (
+        _field("subprocess")
+        or payload.get("subprocess")
+        or derive_subprocess(symptom, diagnostic_area, expected_outcome)
+    )
 
     operativo_extra = {
-        "sector": _field("sector"),
+        "sector": sector,
         "size_org": _field("size_org"),
         "years_operating": _field("years_operating"),
         "areas_count": _field("areas_count"),
@@ -128,13 +158,18 @@ def build_pro_context(
 
     context: dict[str, Any] = {
         "organization_name": client_name or body.get("client_name", ""),
-        "domain": domain or body.get("domain", ""),
-        "sector": _field("sector") or domain or body.get("domain", ""),
-        "subprocess": _field("subprocess") or payload.get("subprocess") or domain,
+        "domain": diagnostic_area,
+        "diagnostic_area": diagnostic_area,
+        "sector": sector or diagnostic_area,
+        "subprocess": subprocess,
         "objective": symptom,
+        "expected_outcome": expected_outcome,
         "size_org": str(_field("size_org") or "51-200"),
         "operational_context": operational_context,
         "paquete_hipotesis": paquete,
+        "survey_mode": survey_mode,
+        "roles": roles,
+        "survey_mode_note": survey_mode_instructions(survey_mode, available_role_labels(roles)),
         "corpus_incidentes": [
             inc.get("texto")
             for fd in field_data.values()
@@ -142,19 +177,100 @@ def build_pro_context(
             if isinstance(inc, dict) and inc.get("texto")
         ],
     }
+    phen = payload.get("phenomenon_analysis") or {}
+    phen_summary = phen.get("summary") if isinstance(phen.get("summary"), dict) else {}
+    if phen_summary.get("phenomenon_named"):
+        context["phenomenon_named"] = str(phen_summary["phenomenon_named"])
+    if phen_summary.get("resolution_motor"):
+        context["phenomenon_motor"] = str(phen_summary["resolution_motor"])
+    p03 = phen.get("p03_convergence") if isinstance(phen.get("p03_convergence"), dict) else {}
+    if p03.get("convergence_summary"):
+        context["phenomenon_summary"] = str(p03["convergence_summary"])
+    context["case_anchors"] = build_case_anchors(context)
 
     g05 = payload.get("g05_brechas") or g05_from_paquete(paquete, field_data)
     context["g05_brechas"] = g05
 
     g02 = payload.get("g02_configurador")
     if not g02:
+        role_labels = available_role_labels(roles)
         g02 = {
-            "roles": [{"id": r, "label": r} for r in roles],
+            "roles": [{"id": r, "label": lbl} for r, lbl in zip(roles, role_labels)],
             "dimensions": [{"id": d, "name": d} for d in dimensions],
+            "survey_mode": survey_mode,
         }
     context["g02_configurador"] = g02
 
     return context
+
+
+def _apply_g13_fallback(context: dict) -> dict[str, Any]:
+    g12 = coerce_tool_dict(context.get("g12_hallazgos"))
+    if g12.get("findings_matrix") or g12.get("executive_summary_findings"):
+        return build_g13_fallback_from_g12(g12, context)
+    return build_g13_fallback_minimal(context)
+
+
+async def _run_g13_redactor(
+    executor: Any,
+    context: dict,
+    stages: list[dict],
+    idx: int,
+    timeout: float,
+    tool_results: dict[str, dict],
+) -> None:
+    """G13: intenta Gemini una vez; si falla (JSON, coherencia, timeout), fallback sin tumbar el caso."""
+    tool_name = "g13_redactor"
+    stages[idx]["status"] = "running"
+    res: dict[str, Any] | None = None
+    output: dict[str, Any] | None = None
+    used_fallback = False
+
+    try:
+        res = await asyncio.wait_for(
+            executor.run_tool(tool_name, context, {}),
+            timeout=timeout,
+        )
+        output = res.get("output", {})
+        if isinstance(output, dict) and not output.get("error"):
+            validate_output_coherence(tool_name, output, context)
+    except (PipelineStageFailureError, asyncio.TimeoutError, Exception) as exc:
+        reason = getattr(exc, "reason", None) or str(exc)
+        log.warning("G13 LLM rechazado (%s); usando fallback determinístico", reason[:160])
+        output = _apply_g13_fallback(context)
+        used_fallback = True
+        res = {
+            "tool": tool_name,
+            "model_used": "deterministic-g13-fallback",
+            "tokens_used": 0,
+            "latency_ms": 0,
+            "output": output,
+        }
+
+    if not isinstance(output, dict) or output.get("error"):
+        output = _apply_g13_fallback(context)
+        used_fallback = True
+        res = {
+            "tool": tool_name,
+            "model_used": "deterministic-g13-fallback",
+            "tokens_used": 0,
+            "latency_ms": 0,
+            "output": output,
+        }
+
+    if used_fallback:
+        log.info("G13 completado con fallback determinístico (sin validación LLM)")
+
+    context[tool_name] = output
+    tool_results[tool_name] = res or {"tool": tool_name, "output": output}
+    stages[idx].update({
+        "status": "completed",
+        "model_used": (res or {}).get("model_used"),
+        "tokens_used": (res or {}).get("tokens_used"),
+        "latency_ms": (res or {}).get("latency_ms"),
+        "output": output,
+    })
+    context.pop("coherence_retry_note", None)
 
 
 def make_stage_list(tools: list[str], start_id: int = 0) -> list[dict]:
@@ -202,21 +318,58 @@ async def run_tool_chain(
         stages[idx]["status"] = "running"
         timeout = TOOL_TIMEOUTS.get(tool_name, default_timeout)
 
+        if tool_name == "g13_redactor":
+            try:
+                await _run_g13_redactor(
+                    executor, context, stages, idx, timeout, tool_results
+                )
+            except PipelineStageFailureError as exc:
+                context[tool_name] = {"error": exc.reason}
+                tool_results[tool_name] = {"error": exc.reason}
+                stages[idx].update({"status": "failed", "output": {"error": exc.reason}})
+                raise
+            except Exception as exc:
+                exc_msg = str(exc)
+                context[tool_name] = {"error": exc_msg}
+                tool_results[tool_name] = {"error": exc_msg}
+                stages[idx].update({"status": "failed", "output": {"error": exc_msg}})
+                raise PipelineStageFailureError(tool_name, exc_msg) from exc
+            continue
+
+        max_attempts = 2 if tool_name == "g12_hallazgos" else 1
+        last_coherence_exc: PipelineStageFailureError | None = None
+
         try:
-            res = await asyncio.wait_for(
-                executor.run_tool(tool_name, context, {}),
-                timeout=timeout,
-            )
-            output = res.get("output", {})
-            context[tool_name] = output
-            tool_results[tool_name] = res
-            stages[idx].update({
-                "status": "completed",
-                "model_used": res.get("model_used"),
-                "tokens_used": res.get("tokens_used"),
-                "latency_ms": res.get("latency_ms"),
-                "output": output,
-            })
+            for attempt in range(max_attempts):
+                if attempt > 0 and last_coherence_exc:
+                    context["coherence_retry_note"] = (
+                        f"REINTENTO {attempt + 1}: el intento anterior fue rechazado por "
+                        f"{last_coherence_exc.reason}. No mencione crédito, vacaciones, "
+                        "onboarding ni RRHH salvo que estén en el intake."
+                    )
+                try:
+                    res = await asyncio.wait_for(
+                        executor.run_tool(tool_name, context, {}),
+                        timeout=timeout,
+                    )
+                    output = res.get("output", {})
+                    if isinstance(output, dict) and not output.get("error"):
+                        validate_output_coherence(tool_name, output, context)
+                    context[tool_name] = output
+                    tool_results[tool_name] = res
+                    stages[idx].update({
+                        "status": "completed",
+                        "model_used": res.get("model_used"),
+                        "tokens_used": res.get("tokens_used"),
+                        "latency_ms": res.get("latency_ms"),
+                        "output": output,
+                    })
+                    context.pop("coherence_retry_note", None)
+                    break
+                except PipelineStageFailureError as exc:
+                    last_coherence_exc = exc
+                    if attempt + 1 >= max_attempts:
+                        raise
         except asyncio.TimeoutError:
             exc_msg = f"Tiempo de espera agotado en {tool_name} ({timeout}s)"
             context[tool_name] = {"error": exc_msg}

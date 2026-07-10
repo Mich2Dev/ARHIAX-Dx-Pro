@@ -21,6 +21,9 @@ function loadDraft(): { client: ProClientData; scope: ProScopeData; step: number
     const raw = localStorage.getItem(DRAFT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
+    if (parsed?.scope && !parsed.scope.survey_mode) {
+      parsed.scope.survey_mode = defaultScope.survey_mode;
+    }
     if (parsed?.scope?.hypotheses && !parsed.scope.hypothesis_pack) {
       parsed.scope = {
         ...defaultScope,
@@ -147,6 +150,7 @@ export function ProCaseWizard() {
       client_name: client.client_name,
       domain: client.domain,
       roles: scope.roles,
+      survey_mode: scope.survey_mode,
       dimensions: scope.dimensions,
       hypotheses,
       paquete_hipotesis,

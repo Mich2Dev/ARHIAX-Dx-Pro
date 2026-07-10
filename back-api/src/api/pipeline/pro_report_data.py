@@ -12,6 +12,9 @@ from api.pipeline.pro_pipeline_tools import (
     extract_stage_outputs,
 )
 from api.pipeline.pro_survey_analytics import compute_live_scoring
+from api.pipeline.pro_coherence import build_case_anchors, coherence_issues
+from api.pipeline.pro_survey_mode import from_payload, is_multi_rater, survey_mode_label
+from api.pipeline.pro_survey_roles import available_role_labels
 
 SURVEY_EXTRA_TOOLS = ("g09a_preguntas", "g09b_ramificacion", "g09c_validacion", "g10b_psicometria")
 _ALL_TOOLS = frozenset(RESEARCH_DESIGN_TOOLS + ANALYSIS_TOOLS + list(SURVEY_EXTRA_TOOLS))
@@ -370,7 +373,9 @@ def validate_report_for_deliverables(data: dict[str, Any], case: Any) -> list[st
         if psych.get("irr") in (None, "", _MISSING):
             outputs_early = data.get("pipeline_outputs") or {}
             irr_stage_ok = _stage_output_ok(outputs_early.get("irr_calculator"))
-            if not irr_stage_ok and (total_resp < 2 or role_count < 2):
+            survey_mode = from_payload(case.input_payload or {})
+            needs_irr = is_multi_rater(survey_mode) and (total_resp >= 2 or role_count >= 2)
+            if not irr_stage_ok and needs_irr:
                 missing.append("IRR Krippendorff (irr_calculator)")
     findings = (data.get("findings") or {}).get("matrix") or []
     if not findings:
@@ -394,6 +399,27 @@ def validate_report_for_deliverables(data: dict[str, Any], case: Any) -> list[st
     g13 = outputs.get("g13_redactor") if isinstance(outputs.get("g13_redactor"), dict) else {}
     if not g13.get("executive_summary") and _is_stub_text(executive.get("narrative")):
         missing.append("Narrativa integrada (g13)")
+
+    payload = case.input_payload or {}
+    extra = _hydrate_extra(payload)
+    symptom = extra.get("symptom") or ""
+    ctx = {
+        "objective": symptom,
+        "sector": extra.get("sector") or "",
+        "domain": case.domain or "",
+        "diagnostic_area": case.domain or "",
+        "subprocess": payload.get("subprocess") or extra.get("subprocess") or "",
+        "expected_outcome": extra.get("expected_outcome") or "",
+        "paquete_hipotesis": payload.get("paquete_hipotesis") or [],
+    }
+    ctx["case_anchors"] = build_case_anchors(ctx)
+    for tool in ("g03_cienciometro", "g04_cartografo", "g06_bpmn_architect", "g12_hallazgos", "g13_redactor"):
+        raw = outputs.get(tool)
+        if tool == "g06_bpmn_architect" and not raw:
+            raw = outputs.get("bpmn_generator")
+        issues = coherence_issues(tool, raw, ctx)
+        if issues:
+            missing.append(f"Coherencia {tool}: {issues[0]}")
     return missing
 
 
@@ -417,16 +443,20 @@ def _build_engagement_context(case: Any, payload: dict, extra: dict) -> dict:
         "contact_email": extra.get("contact_email", "—"),
         "contact_phone": extra.get("contact_phone", "—"),
         "grey_sources": payload.get("grey_sources") or [],
-        "roles": payload.get("roles") or [],
+        "roles": available_role_labels(payload.get("roles") or []),
         "dimensions": payload.get("dimensions") or [],
+        "survey_mode": from_payload(payload),
+        "survey_mode_label": survey_mode_label(from_payload(payload)),
         "domain": case.domain,
     }
 
 
-def _section_guides(domain: str) -> dict[str, str]:
+def _section_guides(domain: str, survey_mode: str) -> dict[str, str]:
+    multi = is_multi_rater(survey_mode)
+    mode_label = survey_mode_label(survey_mode)
     return {
         "executive": (
-            "Este resumen integra madurez multi-rater, hipótesis DDF y triangulación bayesiana. "
+            f"Este resumen integra madurez ({mode_label}), hipótesis DDF y triangulación bayesiana. "
             "Cada afirmación está anclada a incidentes documentados y señales cuantitativas de la encuesta."
         ),
         "context": (
@@ -440,20 +470,28 @@ def _section_guides(domain: str) -> dict[str, str]:
         ),
         "triangulation": (
             "La triangulación cruza tres fuentes independientes: (1) incidentes y observaciones refutadoras del DDF, "
-            "(2) respuestas Likert por rol con cálculo de δσ, y (3) veredicto bayesiano posterior. "
-            "Una hipótesis solo se confirma cuando convergen las tres."
+            + (
+                "(2) respuestas Likert por rol con cálculo de δσ, y (3) veredicto bayesiano posterior. "
+                if multi
+                else "(2) respuestas Likert de la perspectiva única, y (3) veredicto bayesiano posterior. "
+            )
+            + "Una hipótesis solo se confirma cuando convergen las fuentes disponibles."
         ),
         "maturity": (
             "El índice de madurez (0–100) agrega dimensiones estratégicas, de proceso, tecnología y gobernanza. "
-            "Scores por rol revelan si la dirección sobreestima capacidades respecto a quien ejecuta en piso."
+            + (
+                "Scores por rol revelan si la dirección sobreestima capacidades respecto a quien ejecuta en piso."
+                if multi
+                else "Con perspectiva única, el score refleja la visión del decisor participante."
+            )
         ),
         "cienciometria": (
             "La base científica fundamenta las recomendaciones en literatura revisada y benchmarks sectoriales, "
             f"aplicados al dominio «{domain}»."
         ),
         "cartografia": (
-            "La cartografía sectorial contextualiza el caso frente a distribuidores similares, "
-            "tecnologías típicas y prácticas que han demostrado ROI en escenarios comparables."
+            f"La cartografía sectorial contextualiza el caso frente a organizaciones del sector "
+            f"con problemas similares en «{domain}», tecnologías típicas y prácticas con ROI documentado."
         ),
         "ddf": (
             "El marco DDF (Datos Duros + Falsificación) obliga a cada hipótesis a tener incidente anclado "
@@ -472,8 +510,14 @@ def _section_guides(domain: str) -> dict[str, str]:
             "Las acciones de corto plazo atacan δσ crítico; las de mediano plazo consolidan integración sistémica."
         ),
         "psychometrics": (
-            "La confiabilidad del instrumento (α Cronbach, IRR Krippendorff) valida que las diferencias entre roles "
-            "no se deben a ruido del cuestionario sino a brechas reales de percepción organizacional."
+            "La confiabilidad del instrumento (α Cronbach"
+            + (", IRR Krippendorff" if multi else "")
+            + ") valida que las señales no se deben a ruido del cuestionario."
+            + (
+                " Las diferencias entre roles indican brechas reales de percepción organizacional."
+                if multi
+                else ""
+            )
         ),
     }
 
@@ -745,6 +789,8 @@ def _build_triangulation(
     g11a_gaps: list,
     g10b: dict,
     irr: dict,
+    *,
+    multi_rater: bool = True,
 ) -> dict:
     """Matriz de triangulación: DDF + encuesta + bayesiano + psicometría."""
     rows = []
@@ -760,25 +806,33 @@ def _build_triangulation(
     max_gap = delta.get("max_gap", 0)
 
     intake_map = {h.get("hipotesis_id") or h.get("id"): h for h in paquete if isinstance(h, dict)}
-    for h in hypotheses_g05[:8]:
-        if isinstance(h, str):
-            hid, stmt, evid = f"H-{len(rows)+1}", h, "—"
-        elif isinstance(h, dict):
-            hid = h.get("id") or h.get("hypothesis_id") or f"H-{len(rows)+1}"
-            stmt = h.get("hypothesis") or h.get("enunciado") or str(h)
-            evid = h.get("evidence_needed") or h.get("falsification_condition") or "—"
-        else:
+    g05_by_id = {}
+    for h in hypotheses_g05:
+        if isinstance(h, dict):
+            hid = h.get("id") or h.get("hypothesis_id")
+            if hid:
+                g05_by_id[hid] = h
+
+    for h in paquete:
+        if not isinstance(h, dict):
             continue
-        intake = intake_map.get(hid) or {}
-        stmt_full = intake.get("enunciado") or stmt
+        hid = h.get("hipotesis_id") or h.get("id") or f"H-{len(rows)+1}"
+        stmt_full = h.get("enunciado") or ""
+        g05h = g05_by_id.get(hid) or {}
+        evid = (
+            g05h.get("evidence_needed")
+            or g05h.get("falsification_condition")
+            or h.get("observacion_refutadora")
+            or "—"
+        )
         survey_signal = evid
-        if max_gap and "delta_sigma" in str(evid).lower():
-            survey_signal = f"δσ máx={max_gap:.2f} · {evid}"
-        elif max_gap:
-            survey_signal = f"δσ máx={max_gap:.2f} entre roles"
+        if max_gap and multi_rater:
+            survey_signal = f"δσ máx={max_gap:.2f} · {evid}" if max_gap else f"δσ entre roles · {evid}"
+        elif not multi_rater:
+            survey_signal = f"Perspectiva única · {evid}"
         verdict = "Pendiente"
-        for key in (hid, stmt, stmt_full):
-            if key in confirmed or any(k in confirmed for k in (hid, stmt[:30])):
+        for key in (hid, stmt_full):
+            if key in confirmed or any(k in confirmed for k in (hid, stmt_full[:30])):
                 verdict = "Confirmada"
                 break
             if key in rejected:
@@ -786,47 +840,40 @@ def _build_triangulation(
                 break
         rows.append({
             "id": hid,
-            "ddf": _txt(intake.get("incidente_texto") or intake.get("observacion_refutadora") or stmt_full)[:80],
+            "ddf": _txt(h.get("incidente_texto") or h.get("observacion_refutadora") or stmt_full)[:80],
             "survey": _txt(survey_signal)[:60],
             "bayesian": verdict,
             "psych": f"α={g10b.get('cronbach_alpha_overall', g10b.get('cronbach_alpha', '—'))}",
         })
 
-    for h in paquete:
-        if not isinstance(h, dict):
-            continue
-        hid = h.get("hipotesis_id") or h.get("id")
-        if any(r.get("id") == hid for r in rows):
-            continue
-        rows.append({
-            "id": hid or f"INT-{len(rows)+1}",
-            "ddf": _txt(h.get("incidente_texto") or h.get("enunciado"))[:80],
-            "survey": f"Confianza {h.get('confianza', '—')} · dato {h.get('dato_duro', '—')}",
-            "bayesian": "En evaluación",
-            "psych": f"IRR α={irr.get('krippendorff_alpha', '—')}",
-        })
+    if multi_rater:
+        for gap in g11a_gaps[:4]:
+            if not isinstance(gap, dict):
+                continue
+            rows.append({
+                "id": gap.get("hypothesis_id") or "GAP",
+                "ddf": "Brecha de percepción crítica",
+                "survey": f"δσ={gap.get('delta_sigma', '—')} · {gap.get('roles', '')}",
+                "bayesian": _txt(gap.get("interpretation") or gap.get("verdict"))[:50],
+                "psych": "Multi-rater",
+            })
 
-    for gap in g11a_gaps[:4]:
-        if not isinstance(gap, dict):
-            continue
-        rows.append({
-            "id": gap.get("hypothesis_id") or "GAP",
-            "ddf": "Brecha de percepción crítica",
-            "survey": f"δσ={gap.get('delta_sigma', '—')} · {gap.get('roles', '')}",
-            "bayesian": _txt(gap.get("interpretation") or gap.get("verdict"))[:50],
-            "psych": "Multi-rater",
-        })
+    tri_model = (
+        "Triangulación ARHIAX: (1) hipótesis ancladas a incidentes DDF, "
+        "(2) señales cuantitativas multi-rater y δσ, (3) actualización bayesiana, "
+        "(4) validación psicométrica α/IRR."
+        if multi_rater
+        else "Triangulación ARHIAX: (1) hipótesis ancladas a incidentes DDF, "
+        "(2) señales de perspectiva única, (3) actualización bayesiana, "
+        "(4) validación psicométrica α."
+    )
 
     return {
         "rows": rows,
-        "max_delta_sigma": max_gap,
-        "gap_pairs": delta.get("gap_pairs") or [],
-        "critical_gaps": g11a_gaps,
-        "model": (
-            "Triangulación ARHIAX: (1) hipótesis ancladas a incidentes DDF, "
-            "(2) señales cuantitativas multi-rater y δσ, (3) actualización bayesiana, "
-            "(4) validación psicométrica α/IRR."
-        ),
+        "max_delta_sigma": max_gap if multi_rater else 0,
+        "gap_pairs": (delta.get("gap_pairs") or []) if multi_rater else [],
+        "critical_gaps": g11a_gaps if multi_rater else [],
+        "model": tri_model,
     }
 
 
@@ -911,13 +958,17 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
     bottlenecks = g07.get("bottlenecks") or []
 
     g11a_gaps = g11a.get("critical_perception_gaps") or []
-    triangulation = _build_triangulation(paquete, hypotheses_g05, scoring, g11a, g11a_gaps, g10b, irr)
+    extra = _hydrate_extra(payload)
+    survey_mode = from_payload(payload)
+    multi = is_multi_rater(survey_mode)
+
+    triangulation = _build_triangulation(
+        paquete, hypotheses_g05, scoring, g11a, g11a_gaps, g10b, irr, multi_rater=multi
+    )
 
     dim_scores = scoring.get("dimension_scores") or []
     if not dim_scores and isinstance(scoring.get("dimensions"), list):
         dim_scores = scoring["dimensions"]
-
-    extra = _hydrate_extra(payload)
 
     thesis = (
         fusion.get("executive_thesis")
@@ -1040,7 +1091,8 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
         )
 
     engagement = _build_engagement_context(case, payload, extra)
-    guides = _section_guides(case.domain or "")
+    guides = _section_guides(extra.get("sector") or case.domain or "", survey_mode)
+    role_labels = available_role_labels(payload.get("roles") or [])
     implications = _derive_implications(g13, g12, g11a, scoring)
     narrative = g13.get("full_narrative") if g13.get("full_narrative") and not _is_stub_text(g13.get("full_narrative")) else _MISSING
 
@@ -1174,21 +1226,38 @@ def build_pro_report_data(case: Any) -> dict[str, Any]:
         },
         "methodology": {
             "pipeline_agents": 18,
+            "survey_mode": survey_mode,
+            "survey_mode_label": survey_mode_label(survey_mode),
+            "role_labels": role_labels,
             "phases": [
                 ("Investigación", "G01–G05: mandato, benchmarks, cienciometría, cartografía, brechas"),
                 ("Diseño proceso", "G06–G08: BPMN AS-IS, cuellos, TO-BE con ROI"),
-                ("Instrumento", "G09a–c: preguntas multi-rater, ramificación, validación IRR"),
+                (
+                    "Instrumento",
+                    "G09a–c: preguntas "
+                    + ("multi-rater" if multi else "perspectiva única")
+                    + ", ramificación, validación psicométrica",
+                ),
                 ("Análisis", "G10–G11: scoring, psicometría, bayesiano, NLP"),
                 ("Síntesis", "G12–G14: hallazgos, narrativa ejecutiva, QA ≥85"),
             ],
             "evaluates": [
                 "Madurez por dimensión y rol (Likert 1–5 corregido)",
-                "Brechas de percepción δσ entre Estratégico/Táctico/Operativo",
+                *(
+                    ["Brechas de percepción δσ entre niveles jerárquicos"]
+                    if multi
+                    else ["Evaluación desde perspectiva única del decisor"]
+                ),
                 "Hipótesis falseables del intake DDF vs evidencia empírica",
                 "Cuellos de botella y pérdida USD/mes (G07)",
-                "Fiabilidad α Cronbach e IRR Krippendorff",
+                "Fiabilidad α Cronbach" + (" e IRR Krippendorff" if multi else ""),
                 "Consenso científico y praxis sectorial (G03–G04)",
             ],
+            "instrument_config": (
+                f"Modo: {survey_mode_label(survey_mode)} · "
+                f"roles: {', '.join(role_labels) or '—'} · "
+                f"dimensiones: {', '.join(payload.get('dimensions') or [])}"
+            ),
             "perception_gaps": g13.get("perception_gaps") or "",
         },
         "governance": {

@@ -8,6 +8,7 @@ import {
 } from "./hypothesisPack";
 
 export interface ProScopeData {
+  survey_mode: "single_rater" | "multi_rater";
   roles: string[];
   dimensions: string[];
   hypothesis_pack: ProHypothesis[];
@@ -15,6 +16,7 @@ export interface ProScopeData {
 }
 
 export const defaultScope: ProScopeData = {
+  survey_mode: "multi_rater",
   roles: ["executive", "operations", "technology"],
   dimensions: ["strategy", "process", "technology"],
   hypothesis_pack: [emptyHypothesis(0)],
@@ -62,7 +64,19 @@ export function ProStep2Scope({
   onNext: () => void;
   onBack: () => void;
 }) {
+  function setSurveyMode(mode: "single_rater" | "multi_rater") {
+    if (mode === "single_rater") {
+      onChange({ ...data, survey_mode: mode, roles: ["executive"] });
+      return;
+    }
+    const roles = data.roles.length >= 2
+      ? data.roles
+      : ["executive", "operations", "technology"];
+    onChange({ ...data, survey_mode: mode, roles });
+  }
+
   function toggleRole(v: string) {
+    if (data.survey_mode === "single_rater") return;
     const roles = data.roles.includes(v) ? data.roles.filter(r => r !== v) : [...data.roles, v];
     onChange({ ...data, roles });
   }
@@ -85,7 +99,11 @@ export function ProStep2Scope({
   }
 
   const completeHyps = data.hypothesis_pack.filter(isHypothesisComplete);
-  const canNext = data.roles.length > 0 && data.dimensions.length > 0 && completeHyps.length > 0;
+  const minRoles = data.survey_mode === "single_rater" ? 1 : 2;
+  const canNext =
+    data.roles.length >= minRoles &&
+    data.dimensions.length > 0 &&
+    completeHyps.length > 0;
 
   return (
     <div>
@@ -94,27 +112,62 @@ export function ProStep2Scope({
           Alcance del diagnóstico
         </h2>
         <p style={{ margin: "6px 0 0", fontSize: "13px", color: "#706f69" }}>
-          Roles, dimensiones y hipótesis ancladas a incidentes reales — así la IA diseña preguntas específicas, no genéricas.
+          Elija quién responde la encuesta y ancle hipótesis a incidentes reales — el sistema adapta el informe automáticamente.
         </p>
       </div>
 
       <div style={{ marginBottom: "28px" }}>
         <p style={{ margin: "0 0 12px", fontSize: "12px", fontWeight: 500, color: "#171717", fontFamily: "IBM Plex Mono, monospace", paddingBottom: "8px", borderBottom: "1px solid rgba(23,23,23,0.1)" }}>
-          Roles participantes * <span style={{ fontWeight: 400, color: "#706f69", textTransform: "none" }}>(3 perspectivas multi-rater)</span>
+          ¿Quién responde la encuesta? *
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+          {([
+            { mode: "single_rater" as const, title: "Una sola persona", desc: "CEO, dueño o decisor único. Informe de perspectiva única." },
+            { mode: "multi_rater" as const, title: "Varias personas", desc: "2–3 roles (dirección, operación, táctico). Compara brechas entre niveles." },
+          ]).map(opt => {
+            const active = data.survey_mode === opt.mode;
+            return (
+              <button key={opt.mode} type="button" onClick={() => setSurveyMode(opt.mode)} style={{
+                display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px",
+                padding: "14px 16px", textAlign: "left",
+                border: active ? "1px solid #222522" : "1px solid rgba(23,23,23,0.12)",
+                background: active ? "rgba(23,23,23,0.04)" : "#fff",
+                cursor: "pointer",
+              }}>
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "#171717" }}>{opt.title}</span>
+                <span style={{ fontSize: "11px", color: "#706f69", lineHeight: 1.45 }}>{opt.desc}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: "28px" }}>
+        <p style={{ margin: "0 0 12px", fontSize: "12px", fontWeight: 500, color: "#171717", fontFamily: "IBM Plex Mono, monospace", paddingBottom: "8px", borderBottom: "1px solid rgba(23,23,23,0.1)" }}>
+          Roles participantes *{" "}
+          <span style={{ fontWeight: 400, color: "#706f69", textTransform: "none" }}>
+            {data.survey_mode === "single_rater"
+              ? "(perspectiva única — decisor)"
+              : "(multi-rater — cada rol responde por separado)"}
+          </span>
         </p>
         <p style={{ margin: "0 0 12px", fontSize: "12px", color: "#706f69", lineHeight: 1.5 }}>
-          Cada rol debe responder la encuesta por separado. Las dimensiones (abajo) son qué se evalúa, no quién responde.
+          {data.survey_mode === "single_rater"
+            ? "Solo el decisor principal responde. Las dimensiones (abajo) definen qué se evalúa."
+            : "Cada rol debe responder la encuesta por separado. Las dimensiones son qué se evalúa, no quién responde."}
         </p>
         <div className="dx-form-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
           {ROLES.map(r => {
             const active = data.roles.includes(r.value);
+            const locked = data.survey_mode === "single_rater" && r.value !== "executive";
             return (
-              <button key={r.value} type="button" onClick={() => toggleRole(r.value)} style={{
+              <button key={r.value} type="button" onClick={() => toggleRole(r.value)} disabled={locked} style={{
                 display: "flex", alignItems: "flex-start", gap: "10px",
                 padding: "12px 14px", textAlign: "left",
                 border: active ? "1px solid #222522" : "1px solid rgba(23,23,23,0.12)",
                 background: active ? "rgba(23,23,23,0.04)" : "#fff",
-                cursor: "pointer",
+                cursor: locked ? "not-allowed" : "pointer",
+                opacity: locked ? 0.45 : 1,
               }}>
                 {active
                   ? <CheckCircle size={16} style={{ color: "#222522", flexShrink: 0, marginTop: "1px" }} />
