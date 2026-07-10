@@ -1,5 +1,9 @@
 # ARHIAX Dx Pro — Rama `dev`
 
+> **⚠️ PRIORIDAD DE LECTURA:** antes de tocar código, lee  
+> **[docs/PRIORIDAD_LECTURA_ESTADO_OPERATIVO_DX_PRO.md](docs/PRIORIDAD_LECTURA_ESTADO_OPERATIVO_DX_PRO.md)**  
+> (estado julio 2026 — caso Ivania, compuertas `credit`, pipeline G01–G14, motor P01–P07).
+
 Plataforma de diagnósticos organizacionales gobernados — **Sinergia Consulting Group S.A.S.**
 
 Esta rama concentra el flujo **Dx Pro** completo: wizard → pipeline G01–G14 → encuesta multi-rater → diagnóstico → aprobación HIL → entregables PDF/Markdown.
