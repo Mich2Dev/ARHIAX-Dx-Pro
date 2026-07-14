@@ -23,36 +23,83 @@ async function blobErrorMessage(data: Blob): Promise<string> {
   try {
     const text = await data.text();
     const json = JSON.parse(text);
-    if (typeof json.detail === "string") return json.detail;
-    if (json.detail && typeof json.detail === "object") {
-      const d = json.detail as { message?: string; missing_sections?: string[] };
-      if (d.missing_sections?.length) {
-        return `${d.message ?? "PDF incompleto"}: ${d.missing_sections.join(", ")}`;
-      }
-      return d.message ?? JSON.stringify(json.detail);
-    }
-    if (Array.isArray(json.detail)) return json.detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join("; ");
+    return humanizeApiDetail(json.detail) ?? "No se pudo descargar el archivo.";
   } catch {
     /* not JSON */
   }
   return "No se pudo descargar el archivo. Verifica que el caso esté aprobado.";
 }
 
-async function extractDownloadError(e: unknown): Promise<string> {
-  if (axios.isAxiosError(e) && e.response?.data) {
-    const data = e.response.data;
-    if (data instanceof Blob) return blobErrorMessage(data);
-    if (typeof data === "object" && data !== null) {
-      const detail = (data as { detail?: unknown }).detail;
-      if (typeof detail === "string") return detail;
-      if (detail && typeof detail === "object") {
-        const d = detail as { message?: string; missing_sections?: string[] };
-        if (d.missing_sections?.length) {
-          return `${d.message ?? "Entregable incompleto"}: ${d.missing_sections.join(", ")}`;
-        }
-        return d.message ?? JSON.stringify(detail);
-      }
+/** Traduce 403/409 de entregables a lenguaje de consultor (nunca “status code 409”). */
+export function humanizeApiDetail(detail: unknown): string | null {
+  if (typeof detail === "string") {
+    if (/aprobaci[oó]n|HIL|sell/i.test(detail)) {
+      return "El informe solo se descarga después de sellar el caso.";
     }
+    return detail;
+  }
+  if (!detail || typeof detail !== "object") return null;
+  const d = detail as { message?: string; missing_sections?: string[] };
+  const sections = d.missing_sections ?? [];
+  if (sections.length) {
+    const plain = sections.map(humanizeMissingSection).filter(Boolean);
+    return (
+      "El informe no se puede entregar todavía: parte del análisis no cuadra con el caso " +
+      "(para no inventar contenido). " +
+      (plain.length ? `Detalle: ${plain.join("; ")}. ` : "") +
+      "Usá «Regenerar informe» y volvé a intentar."
+    );
+  }
+  if (d.message) {
+    if (/incoherent|incomplet|coherenc/i.test(d.message)) {
+      return (
+        "El informe no pasó el control de coherencia con el caso. " +
+        "No lo descargamos para evitar un PDF inventado. Regenerá el informe e intentá de nuevo."
+      );
+    }
+    return d.message;
+  }
+  return null;
+}
+
+function humanizeMissingSection(raw: string): string {
+  const s = raw.trim();
+  if (/g06_bpmn/i.test(s)) {
+    return "el mapa de proceso (BPMN) no habla del síntoma del cliente";
+  }
+  if (/g04_cartog/i.test(s)) return "la cartografía sectorial se desvió del caso";
+  if (/g03_ciencia/i.test(s)) return "la cienciometría no está anclada al síntoma";
+  if (/g12_hallazgos/i.test(s)) return "los hallazgos no están anclados al caso";
+  if (/g13_redactor/i.test(s)) return "la redacción ejecutiva no cuadra con el caso";
+  if (/ajeno|credit|vacation|hr_/i.test(s)) return "apareció un tema ajeno al encargo";
+  if (/poca relación/i.test(s)) return "poca relación con el dolor del cliente";
+  return s.replace(/^Coherencia\s+/i, "").slice(0, 120);
+}
+
+async function extractDownloadError(e: unknown): Promise<string> {
+  if (axios.isAxiosError(e)) {
+    const status = e.response?.status;
+    const data = e.response?.data;
+    if (data instanceof Blob) return blobErrorMessage(data);
+    if (data && typeof data === "object") {
+      const human = humanizeApiDetail((data as { detail?: unknown }).detail);
+      if (human) return human;
+    }
+    if (status === 409) {
+      return (
+        "El informe no pasó el control de coherencia. " +
+        "No lo descargamos para evitar contenido inventado. Regenerá el informe."
+      );
+    }
+    if (status === 403) {
+      return "El informe solo se descarga después de sellar el caso.";
+    }
+  }
+  if (e instanceof Error && /status code 409/i.test(e.message)) {
+    return (
+      "El informe no pasó el control de coherencia. " +
+      "No lo descargamos para evitar contenido inventado. Regenerá el informe."
+    );
   }
   return e instanceof Error ? e.message : "Error al descargar";
 }
@@ -124,7 +171,7 @@ export function useDownloadProCase() {
     }
   }
 
-  return { download, loading, error };
+  return { download, loading, error, setError };
 }
 
 function _triggerDownload(blob: Blob, filename: string) {

@@ -1,0 +1,36 @@
+---
+description: Consenso Maiko–agente para Dx Pro — modo congelado, barra consultiva, prohibiciones de UI
+alwaysApply: true
+---
+
+# Consenso Maiko · ARHIAX Dx Pro
+
+## Quién es el usuario
+- Único builder de Dx Pro. Quiere **demostración de sistema completo**, no laboratorio infinito.
+- Prefiere respuestas cortas y honestas: listo / no listo. Sin rodeos.
+- Referente de calidad: metodología Governex / trabajo de su jefe — **nunca poner nombres de personas (ej. Ray) en UI copy**.
+
+## Barra de calidad (no negociar por caso)
+- Referencia viva: carpeta `caso_ivania_Ray_miller_jefe` (corpus multi-doc: descubrimiento, 7 puntas, TRIZ, propuesta, arquitectura).
+- El éxito NO es “salió un PDF”. Es: dolor → epojé → fenómeno → TRIZ → evidencia → motor → próximo paso, **distinto por caso**.
+- Hoy el PDF Pro ≠ ese corpus. No prometer paridad sin haber cerrado el gap.
+
+## Modo de trabajo (obligatorio salvo que diga lo contrario)
+1. **Congelar** — no ajustar código “para este caso”.
+2. **Correr** — medir con la misma checklist en 2–3 casos.
+3. **Lista de fallos** — acumular en lenguaje claro (capturas opcionales, no obligatorias).
+4. **Un solo arreglo** — solo cuando diga explícitamente algo como: “listo, arreglá con la lista”.
+
+Si pide “otro caso”, ayudar a **correr/evaluar**, no a reescribir el producto alrededor de ese caso.
+
+## UI / producto — prohibido
+- Nombre del jefe u otras personas como etiqueta de método.
+- Orientación “cola al PDF” / CTAs tipo “Ir a Entrega (PDF)”.
+- Meta-comentarios de diseño filtrados a pantallas de consultor.
+- Duplicar paneles (ej. hallazgos de Síntesis otra vez en Documentos).
+
+## Vistas del workspace (peer, no cinta)
+Trabajo: Encargo · Método · Campo · Síntesis · Sello. Explorar: Mapa · Documentos (descargas/inventario).
+
+## Mapa mental vivo
+Canvas: `maiko-consenso-dxpro.canvas.tsx` en el proyecto Cursor. Actualizar si el usuario corrige el consenso.

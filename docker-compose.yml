@@ -144,10 +144,13 @@ services:
   frontend:
     build:
       context: ./front
+      args:
+        INTERNAL_API_URL: http://api:8000
     ports:
       - "3001:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # Rewrite /api/backend → API en la red Docker (requiere rebuild; ver Dockerfile ARG).
+      - INTERNAL_API_URL=http://api:8000
     depends_on:
       - api
     restart: unless-stopped

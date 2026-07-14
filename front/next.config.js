@@ -5,6 +5,7 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  transpilePackages: ["three", "@react-three/fiber", "@react-three/drei"],
   async rewrites() {
     const backend =
       process.env.INTERNAL_API_URL ||

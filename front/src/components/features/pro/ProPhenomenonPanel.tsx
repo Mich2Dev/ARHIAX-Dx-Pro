@@ -1,6 +1,7 @@
 "use client";
 
-import { Loader2, Sparkles, AlertTriangle, CheckCircle2, Download } from "lucide-react";
+import { Loader2, AlertTriangle, CheckCircle2, Download } from "lucide-react";
+import type { CSSProperties } from "react";
 import { apiPro } from "@/lib/api-pro";
 
 type PhenomenonDoc = {
@@ -74,28 +75,53 @@ export function ProPhenomenonPanel({ phenomenon, caseId, analyzing, onAnalyze }:
   const summary = phenomenon?.summary;
   const isRunning = status === "running";
   const isFailed = status === "failed";
-  const hasResult = summary?.phenomenon_named && !isRunning && !isFailed;
+  const hasResult = Boolean(summary?.phenomenon_named && !isRunning && !isFailed);
 
   return (
     <div
       style={{
-        background: "linear-gradient(135deg, #1a1a18 0%, #243c4f 100%)",
-        borderRadius: "4px",
-        padding: "20px 24px",
-        marginBottom: "20px",
-        color: "#f5f0e8",
+        background: "#fff",
+        border: "1px solid rgba(23,23,23,0.1)",
+        padding: "22px 24px",
+        marginBottom: 8,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "16px", flexWrap: "wrap" }}>
-        <div>
-          <p style={{ margin: 0, fontSize: "10px", fontFamily: "IBM Plex Mono, monospace", letterSpacing: "0.1em", color: "#9b6d4d" }}>
-            MOTOR DE FENÓMENO · P01–P07
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ maxWidth: 560 }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 10,
+              fontFamily: "IBM Plex Mono, monospace",
+              letterSpacing: "0.1em",
+              color: "#9b6d4d",
+            }}
+          >
+            FENÓMENO · EPOJÉ → CONVERGENCIA → TRIZ → KILL CRITIC
           </p>
-          <h3 style={{ margin: "6px 0 0", fontFamily: "Cormorant Garamond, Georgia, serif", fontSize: "22px", fontWeight: 500 }}>
-            Abordaje Governex
+          <h3
+            style={{
+              margin: "8px 0 0",
+              fontFamily: "Cormorant Garamond, Georgia, serif",
+              fontSize: 26,
+              fontWeight: 500,
+              color: "#171717",
+              lineHeight: 1.1,
+            }}
+          >
+            {hasResult ? summary!.phenomenon_named : "Todavía sin nombrar"}
           </h3>
-          <p style={{ margin: "8px 0 0", fontSize: "13px", color: "rgba(245,240,232,0.75)", maxWidth: "520px", lineHeight: 1.5 }}>
-            Analiza el caso como consultor: refuta el diagnóstico del cliente, nombra el fenómeno real y deriva qué documentos generar.
+          <p style={{ margin: "10px 0 0", fontSize: 13, color: "#706f69", lineHeight: 1.5 }}>
+            Suspendé el diagnóstico declarado del cliente, triangulá con las siete puntas y nombrá el fenómeno
+            antes de instrumentar campo o vender.
           </p>
         </div>
         {onAnalyze && (
@@ -106,82 +132,118 @@ export function ProPhenomenonPanel({ phenomenon, caseId, analyzing, onAnalyze }:
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: "8px",
-              padding: "10px 16px",
-              background: isRunning ? "rgba(255,255,255,0.1)" : "#9b6d4d",
+              gap: 8,
+              padding: "11px 16px",
+              background: isRunning ? "rgba(23,23,23,0.08)" : "#171717",
               border: "none",
-              borderRadius: "2px",
-              color: "#fff",
-              fontSize: "12px",
+              color: isRunning ? "#706f69" : "#f4f1ea",
+              fontSize: 12,
               fontFamily: "IBM Plex Mono, monospace",
               cursor: isRunning ? "wait" : "pointer",
-              opacity: isRunning ? 0.7 : 1,
             }}
           >
-            {isRunning ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Sparkles size={14} />}
-            {isRunning ? "Analizando…" : hasResult ? "Re-analizar fenómeno" : "Analizar fenómeno"}
+            {isRunning ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : null}
+            {isRunning ? "Analizando…" : hasResult ? "Re-analizar" : "Analizar fenómeno"}
           </button>
         )}
       </div>
 
       {isRunning && (
-        <p style={{ marginTop: "16px", fontSize: "12px", color: "rgba(245,240,232,0.8)", fontFamily: "IBM Plex Mono, monospace" }}>
-          Ejecutando epoqué → convergencia → contradicción → kill critic…
+        <p
+          style={{
+            marginTop: 16,
+            fontSize: 12,
+            color: "#56624b",
+            fontFamily: "IBM Plex Mono, monospace",
+          }}
+        >
+          Epojé → convergencia → contradicción → kill critic…
         </p>
       )}
 
       {isFailed && (
-        <div style={{ marginTop: "16px", padding: "12px", background: "rgba(139,58,58,0.3)", borderRadius: "2px", fontSize: "13px" }}>
-          <AlertTriangle size={14} style={{ display: "inline", marginRight: "8px", verticalAlign: "middle" }} />
-          El análisis de fenómeno falló. Reintente o revise el intake (síntoma e incidentes).
+        <div
+          style={{
+            marginTop: 16,
+            padding: 12,
+            background: "rgba(139,58,58,0.08)",
+            border: "1px solid rgba(139,58,58,0.25)",
+            fontSize: 13,
+            color: "#8b3a3a",
+          }}
+        >
+          <AlertTriangle size={14} style={{ display: "inline", marginRight: 8, verticalAlign: "middle" }} />
+          El análisis falló. Revisá el intake (síntoma e incidentes) y reintentá.
         </div>
       )}
 
       {hasResult && summary && (
-        <div style={{ marginTop: "20px", display: "grid", gap: "14px" }}>
-          <div style={{ padding: "14px", background: "rgba(0,0,0,0.25)", borderRadius: "2px" }}>
-            <p style={{ margin: 0, fontSize: "10px", color: "#9b6d4d", fontFamily: "IBM Plex Mono, monospace" }}>FENÓMENO NOMBRADO</p>
-            <p style={{ margin: "6px 0 0", fontSize: "16px", fontFamily: "Cormorant Garamond, Georgia, serif" }}>{summary.phenomenon_named}</p>
-            {summary.convergence_summary && (
-              <p style={{ margin: "8px 0 0", fontSize: "13px", color: "rgba(245,240,232,0.85)", lineHeight: 1.5 }}>{summary.convergence_summary}</p>
-            )}
-          </div>
+        <div style={{ marginTop: 20, display: "grid", gap: 14 }}>
+          {summary.convergence_summary && (
+            <div style={{ padding: "14px 16px", background: "#f4f1ea", borderLeft: "3px solid #56624b" }}>
+              <p style={{ margin: 0, fontSize: 10, color: "#9b6d4d", fontFamily: "IBM Plex Mono, monospace" }}>
+                CONVERGENCIA
+              </p>
+              <p style={{ margin: "8px 0 0", fontSize: 14, color: "#171717", lineHeight: 1.55 }}>
+                {summary.convergence_summary}
+              </p>
+            </div>
+          )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
             {summary.resolution_motor && (
-              <div style={{ padding: "12px", background: "rgba(0,0,0,0.2)", borderRadius: "2px" }}>
-                <p style={{ margin: 0, fontSize: "10px", color: "#56624b" }}>MOTOR</p>
-                <p style={{ margin: "4px 0 0", fontSize: "13px" }}>{summary.resolution_motor}</p>
+              <div style={{ padding: 14, border: "1px solid rgba(23,23,23,0.08)", background: "#fff" }}>
+                <p style={{ margin: 0, fontSize: 10, color: "#56624b", fontFamily: "IBM Plex Mono, monospace" }}>
+                  MOTOR
+                </p>
+                <p style={{ margin: "6px 0 0", fontSize: 13, color: "#171717", lineHeight: 1.45 }}>
+                  {summary.resolution_motor}
+                </p>
+                {summary.resolution_rule && (
+                  <p style={{ margin: "8px 0 0", fontSize: 12, color: "#706f69" }}>{summary.resolution_rule}</p>
+                )}
               </div>
             )}
             {summary.hinge_question && (
-              <div style={{ padding: "12px", background: "rgba(0,0,0,0.2)", borderRadius: "2px" }}>
-                <p style={{ margin: 0, fontSize: "10px", color: "#56624b" }}>PREGUNTA BISAGRA</p>
-                <p style={{ margin: "4px 0 0", fontSize: "13px" }}>{summary.hinge_question}</p>
+              <div style={{ padding: 14, border: "1px solid rgba(23,23,23,0.08)", background: "#fff" }}>
+                <p style={{ margin: 0, fontSize: 10, color: "#56624b", fontFamily: "IBM Plex Mono, monospace" }}>
+                  PREGUNTA BISAGRA
+                </p>
+                <p style={{ margin: "6px 0 0", fontSize: 13, color: "#171717", lineHeight: 1.45 }}>
+                  {summary.hinge_question}
+                </p>
               </div>
             )}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#171717" }}>
             {summary.gates_passed ? (
               <>
                 <CheckCircle2 size={16} color="#56624b" />
-                <span>Gates Kill Critic: OK para avanzar</span>
+                <span>Kill Critic: OK para avanzar</span>
               </>
             ) : (
               <>
-                <AlertTriangle size={16} color="#c9a227" />
-                <span>Gates con advertencias — revisar antes de propuesta comercial</span>
+                <AlertTriangle size={16} color="#9b6d4d" />
+                <span>Kill Critic con advertencias — revisá antes de propuesta comercial</span>
               </>
             )}
           </div>
 
+          {(summary.blocking_reasons?.length ?? 0) > 0 && (
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#8b3a3a", lineHeight: 1.5 }}>
+              {summary.blocking_reasons!.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+          )}
+
           {(summary.recommended_documents?.length ?? 0) > 0 && (
             <div>
-              <p style={{ margin: "0 0 8px", fontSize: "10px", fontFamily: "IBM Plex Mono, monospace", color: "#9b6d4d" }}>
-                DOCUMENTOS RECOMENDADOS
+              <p style={{ margin: "0 0 8px", fontSize: 10, fontFamily: "IBM Plex Mono, monospace", color: "#9b6d4d" }}>
+                DOCUMENTOS DERIVADOS
               </p>
-              <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "13px", lineHeight: 1.6 }}>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6, color: "#171717" }}>
                 {summary.recommended_documents!.map((d, i) => (
                   <li key={i}>
                     {DOC_LABELS[d.type] ?? d.type}
@@ -193,32 +255,24 @@ export function ProPhenomenonPanel({ phenomenon, caseId, analyzing, onAnalyze }:
           )}
 
           {summary.next_operational_step && (
-            <p style={{ margin: 0, fontSize: "12px", fontFamily: "IBM Plex Mono, monospace", color: "rgba(245,240,232,0.9)" }}>
+            <p style={{ margin: 0, fontSize: 12, fontFamily: "IBM Plex Mono, monospace", color: "#56624b" }}>
               → {summary.next_operational_step}
             </p>
           )}
 
           {caseId && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "8px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 4 }}>
               <button
                 type="button"
                 onClick={() => downloadMd(`/pro/cases/${caseId}/download/phenomenon-internal`, "fenomeno_interno.md")}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: "6px",
-                  padding: "8px 12px", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)",
-                  borderRadius: "2px", color: "#f5f0e8", fontSize: "11px", fontFamily: "IBM Plex Mono, monospace", cursor: "pointer",
-                }}
+                style={dlBtn}
               >
                 <Download size={12} /> Análisis interno (.md)
               </button>
               <button
                 type="button"
                 onClick={() => downloadMd(`/pro/cases/${caseId}/download/phenomenon-discovery`, "descubrimiento.md")}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: "6px",
-                  padding: "8px 12px", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)",
-                  borderRadius: "2px", color: "#f5f0e8", fontSize: "11px", fontFamily: "IBM Plex Mono, monospace", cursor: "pointer",
-                }}
+                style={dlBtn}
               >
                 <Download size={12} /> Formulario descubrimiento (.md)
               </button>
@@ -229,3 +283,16 @@ export function ProPhenomenonPanel({ phenomenon, caseId, analyzing, onAnalyze }:
     </div>
   );
 }
+
+const dlBtn: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "8px 12px",
+  background: "#f4f1ea",
+  border: "1px solid rgba(23,23,23,0.12)",
+  color: "#171717",
+  fontSize: 11,
+  fontFamily: "IBM Plex Mono, monospace",
+  cursor: "pointer",
+};

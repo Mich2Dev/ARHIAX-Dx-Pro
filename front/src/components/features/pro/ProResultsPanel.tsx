@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Download, Loader2, CheckCircle, AlertTriangle,
   Lightbulb, TrendingUp, Activity, ChevronDown, ChevronUp,
@@ -36,7 +36,7 @@ export function ProGovernancePanel({ caseData }: { caseData: any }) {
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
         <ShieldCheck size={16} style={{ color: "#56624b" }} />
         <h3 style={{ margin: 0, fontSize: "12px", fontFamily: "IBM Plex Mono, monospace", fontWeight: 500, color: "#222522" }}>
-          GOBERNANZA PMEL/ATK
+          Controles técnicos
         </h3>
       </div>
 
@@ -190,35 +190,83 @@ export function ProExecutionMetrics({ caseData }: { caseData: any }) {
   );
 }
 
-import { useDownloadProCase } from "@/hooks/useDownload";
+import { useDownloadProCase, humanizeApiDetail } from "@/hooks/useDownload";
 import { apiPro } from "@/lib/api-pro";
+import axios from "axios";
 
 // ── Panel de resultados completo ──────────────────────────────────────────────
 export function ProResultsPanel({
   caseData,
   caseId,
   onRefresh,
+  showDownloads = true,
 }: {
   caseData: any;
   caseId: string;
   onRefresh?: () => void;
+  /** Si false, solo muestra hallazgos (antes del sello). */
+  showDownloads?: boolean;
 }) {
-  const { download, loading: downloading, error: downloadError } = useDownloadProCase();
+  const { download, loading: downloading, error: downloadError, setError: setDownloadError } = useDownloadProCase();
   const [regenerating, setRegenerating] = useState(false);
   const [regenMessage, setRegenMessage] = useState<string | null>(null);
+  const [gateMsg, setGateMsg] = useState<string | null>(null);
+  const [gateChecking, setGateChecking] = useState(false);
+  const [deliverableReady, setDeliverableReady] = useState(false);
   const canDownload = ["approved", "published"].includes(caseData.case_status);
   const hasSurveyResponses = (caseData.survey?.responses_count ?? 0) > 0;
+
+  useEffect(() => {
+    if (!showDownloads || !canDownload) {
+      setGateMsg(null);
+      setDeliverableReady(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setGateChecking(true);
+      setGateMsg(null);
+      try {
+        await apiPro.post(`/pro/cases/${caseId}/generate-deliverables`);
+        if (!cancelled) {
+          setDeliverableReady(true);
+          setGateMsg(null);
+        }
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setDeliverableReady(false);
+        if (axios.isAxiosError(e)) {
+          const human = humanizeApiDetail(e.response?.data?.detail);
+          setGateMsg(
+            human ??
+              (e.response?.status === 409
+                ? "El informe no pasó el control de coherencia. No mostramos descarga para evitar un PDF inventado."
+                : "No se pudo preparar el informe.")
+          );
+        } else {
+          setGateMsg("No se pudo preparar el informe.");
+        }
+      } finally {
+        if (!cancelled) setGateChecking(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showDownloads, canDownload, caseId, caseData.case_status, caseData.render_result?.markdown]);
 
   async function handleRegenerate() {
     setRegenerating(true);
     setRegenMessage(null);
+    setGateMsg(null);
+    setDeliverableReady(false);
     try {
       const res = await apiPro.post(`/pro/cases/${caseId}/regenerate-report`);
-      setRegenMessage(res.data?.message ?? "Regeneración iniciada.");
+      setRegenMessage(res.data?.message ?? "Regeneración iniciada. Cuando termine, volvé a Documentos.");
       onRefresh?.();
     } catch (e: unknown) {
-      const msg = e && typeof e === "object" && "response" in e
-        ? String((e as { response?: { data?: { detail?: string } } }).response?.data?.detail ?? "Error al regenerar")
+      const msg = axios.isAxiosError(e)
+        ? humanizeApiDetail(e.response?.data?.detail) ?? "Error al regenerar el informe"
         : "Error al regenerar el informe";
       setRegenMessage(msg);
     } finally {
@@ -227,10 +275,22 @@ export function ProResultsPanel({
   }
 
   async function handleDownload(target: string) {
+    setDownloadError?.(null);
     try {
       await apiPro.post(`/pro/cases/${caseId}/generate-deliverables`);
-    } catch {
-      // Si ya se generaron o grammar gate avisa, igual intentamos descargar
+      setDeliverableReady(true);
+      setGateMsg(null);
+    } catch (e: unknown) {
+      setDeliverableReady(false);
+      const human = axios.isAxiosError(e)
+        ? humanizeApiDetail(e.response?.data?.detail)
+        : null;
+      const msg =
+        human ??
+        "El informe no está listo: falló el control de coherencia. Regenerá antes de descargar.";
+      setGateMsg(msg);
+      setDownloadError?.(msg);
+      return;
     }
     await download(caseId, target, caseData.client_name ?? "diagnostico");
   }
@@ -250,41 +310,54 @@ export function ProResultsPanel({
   return (
     <div style={{ display: "grid", gap: "1px" }}>
 
-      {/* Barra de descarga */}
+      {/* Barra de descarga — solo cuando el flujo lo permite (post-sello) */}
+      {showDownloads && (
       <div style={{
-        background: "#222522", padding: "20px 24px",
+        background: gateMsg ? "#3a2a24" : "#222522", padding: "20px 24px",
         display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px",
+        flexWrap: "wrap",
       }}>
-        <div>
+        <div style={{ flex: "1 1 240px", minWidth: 200 }}>
           <p style={{ margin: 0, fontSize: "14px", fontWeight: 500, color: "#f4f1ea" }}>
-            Diagnóstico completado
+            {!canDownload
+              ? "Informe bloqueado hasta el sello"
+              : gateChecking
+                ? "Comprobando coherencia del informe…"
+                : gateMsg
+                  ? "Informe no disponible (control de calidad)"
+                  : deliverableReady
+                    ? "Informe ejecutivo disponible"
+                    : "Preparando informe…"}
           </p>
-          <p style={{ margin: "4px 0 0", fontSize: "12px", color: "rgba(244,241,234,0.5)" }}>
-            {(caseData.deliverables ?? []).length} entregables generados
+          <p style={{ margin: "6px 0 0", fontSize: "12px", color: "rgba(244,241,234,0.55)", lineHeight: 1.45 }}>
+            {!canDownload
+              ? "El sello habilita la descarga. Mientras, revisá método y síntesis."
+              : gateMsg
+                ? gateMsg
+                : deliverableReady
+                  ? "Pasó el control de coherencia. Podés descargar PDF / DOCX / MD."
+                  : gateChecking
+                    ? "Verificamos que el contenido coincida con el caso antes de ofrecer descarga."
+                    : "—"}
           </p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
-          {!canDownload && (
-            <p style={{ margin: 0, fontSize: "10px", color: "rgba(244,241,234,0.55)", fontFamily: "IBM Plex Mono, monospace" }}>
-              Aprueba el caso para habilitar descargas
-            </p>
-          )}
-          {downloadError && (
-            <p style={{ margin: 0, fontSize: "10px", color: "#e8b4b4", fontFamily: "IBM Plex Mono, monospace", maxWidth: "320px", textAlign: "right" }}>
+          {downloadError && !gateMsg && (
+            <p style={{ margin: 0, fontSize: "11px", color: "#e8b4b4", maxWidth: "360px", textAlign: "right", lineHeight: 1.4 }}>
               {downloadError}
             </p>
           )}
           {regenMessage && (
-            <p style={{ margin: 0, fontSize: "10px", color: "#d4c4a8", fontFamily: "IBM Plex Mono, monospace", maxWidth: "320px", textAlign: "right" }}>
+            <p style={{ margin: 0, fontSize: "11px", color: "#d4c4a8", maxWidth: "360px", textAlign: "right", lineHeight: 1.4 }}>
               {regenMessage}
             </p>
           )}
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {hasSurveyResponses && (
+          {(hasSurveyResponses || gateMsg) && (
             <button
               type="button"
               onClick={() => handleRegenerate().catch(() => {})}
-              disabled={regenerating || caseData.case_status === "running"}
+              disabled={regenerating || caseData.case_status === "running" || gateChecking}
               style={{
                 display: "flex", alignItems: "center", gap: "6px",
                 minHeight: "38px", border: "1px solid rgba(244,241,234,0.35)", padding: "8px 14px",
@@ -296,18 +369,22 @@ export function ProResultsPanel({
               Regenerar informe
             </button>
           )}
-          {["markdown", "docx", "pdf"].map(target => (
+          {["markdown", "docx", "pdf"].map(target => {
+            const enabled = canDownload && deliverableReady && !gateChecking && !gateMsg;
+            return (
             <button
               key={target}
+              type="button"
               onClick={() => handleDownload(target).catch(() => {})}
-              disabled={!!downloading || !canDownload}
+              disabled={!!downloading || !enabled}
+              title={!enabled ? (gateMsg || "Descarga disponible cuando el informe pase coherencia") : undefined}
               style={{
                 display: "flex", alignItems: "center", gap: "6px",
                 minHeight: "38px", border: "1px solid rgba(244,241,234,0.2)", padding: "8px 14px",
                 background: downloading === target ? "rgba(244,241,234,0.1)" : "rgba(244,241,234,0.08)",
                 color: "#f4f1ea", fontSize: "11px", fontFamily: "IBM Plex Mono, monospace",
-                cursor: downloading ? "not-allowed" : "pointer",
-                opacity: downloading && downloading !== target ? 0.4 : 1,
+                cursor: enabled && !downloading ? "pointer" : "not-allowed",
+                opacity: !enabled || (downloading && downloading !== target) ? 0.35 : 1,
               }}
             >
               {downloading === target
@@ -316,10 +393,21 @@ export function ProResultsPanel({
               }
               {target.toUpperCase()}
             </button>
-          ))}
+            );
+          })}
           </div>
         </div>
       </div>
+      )}
+
+      {!showDownloads && !canDownload && caseData.case_status === "review_pending" && (
+        <div style={{
+          background: "rgba(155,109,77,0.1)", border: "1px solid rgba(155,109,77,0.3)",
+          padding: "14px 18px", color: "#9b6d4d", fontSize: 13,
+        }}>
+          Hallazgos listos para revisión. El PDF se descarga <b>después</b> de sellar el caso.
+        </div>
+      )}
 
       {/* Score global */}
       {scoring.overall_score != null && (

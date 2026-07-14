@@ -9,6 +9,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Destino del rewrite /api/backend — en Docker Compose el servicio se llama "api".
+ARG INTERNAL_API_URL=http://api:8000
+ENV INTERNAL_API_URL=$INTERNAL_API_URL
 RUN npm run build
 
 FROM node:20-alpine AS runner
