@@ -30,7 +30,8 @@ ENV INTERNAL_API_URL=http://localhost:8000
 RUN npm install
 RUN npm run build
 RUN cp -r .next/static .next/standalone/.next/static
-RUN cp -r public .next/standalone/public
+RUN mkdir -p .next/standalone/public \
+    && if [ -d public ] && [ "$(ls -A public 2>/dev/null)" ]; then cp -r public/. .next/standalone/public/; fi
 WORKDIR /app
 
 # Configurar Postgres y Supervisor
