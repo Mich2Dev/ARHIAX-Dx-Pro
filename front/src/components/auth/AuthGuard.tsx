@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { Spinner } from "@/components/ui/Spinner";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -17,13 +16,41 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Spinner className="w-8 h-8" />
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f4f1ea",
+          color: "#706f69",
+          fontFamily: "IBM Plex Mono, monospace",
+          fontSize: 12,
+        }}
+      >
+        Cargando sesión…
       </div>
     );
   }
 
-  if (!user) return null;
+  if (!user) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f4f1ea",
+          color: "#706f69",
+          fontFamily: "IBM Plex Mono, monospace",
+          fontSize: 12,
+        }}
+      >
+        Redirigiendo al login…
+      </div>
+    );
+  }
 
   return <>{children}</>;
 }

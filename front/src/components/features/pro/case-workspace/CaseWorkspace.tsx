@@ -88,7 +88,7 @@ const WORK_VIEWS: SectionDef[] = [
 
 /** Vistas de exploración — demuestran el sistema, no “cierran” el caso. */
 const EXPLORE_VIEWS: SectionDef[] = [
-  { id: "mapa", n: "◉", label: "Mapa 3D", hint: "Globo del caso" },
+  { id: "mapa", n: "◉", label: "Mapa", hint: "Traza del caso" },
   { id: "docs", n: "◇", label: "Documentos", hint: "Paquete del caso" },
 ];
 
@@ -575,7 +575,7 @@ export function CaseWorkspace(props: Props) {
         </div>
       </div>
 
-      {/* ── Contenido + mapa 3D persistente (Canvas no se desmonta al cambiar vista) ── */}
+      {/* ── Contenido + mapa persistente ── */}
       <div className={`cw-stage${section === "mapa" ? " is-mapa" : ""}`}>
         <div className="cw-panel" key={section}>
           {section === "encargo" && (
@@ -587,7 +587,7 @@ export function CaseWorkspace(props: Props) {
               <SectionIntro
                 kicker="Cómo se piensa el caso"
                 title="Método"
-                body="Epojé, siete puntas, fenómeno, TRIZ y kill critic. El globo a la derecha sigue la capa Método en vivo."
+                body="Epojé, siete puntas, fenómeno, TRIZ y kill critic. El mapa a la derecha sigue la capa Método."
               />
               <ProPhenomenonPanel
                 phenomenon={c.phenomenon}
@@ -613,7 +613,7 @@ export function CaseWorkspace(props: Props) {
                     cursor: "pointer",
                   }}
                 >
-                  <Map size={14} /> Ampliar mapa 3D
+                  <Map size={14} /> Ampliar mapa
                 </button>
                 <button
                   type="button"
@@ -659,7 +659,7 @@ export function CaseWorkspace(props: Props) {
               <SectionIntro
                 kicker="Motor de hallazgos"
                 title="Síntesis"
-                body="Tesis, scores y etapas de consolidación. El mapa 3D acompaña el avance sin salirte de esta vista."
+                body="Tesis, scores y etapas de consolidación. El mapa acompaña el avance sin salirte de esta vista."
               />
               {(c.case_status === "running" || (c.stages ?? c.pipeline_stages)?.length > 0) && (
                 <ProFusionPipeline caseData={c} isFetching={isFetching} />
@@ -679,7 +679,7 @@ export function CaseWorkspace(props: Props) {
               )}
               <div style={{ marginTop: 24, display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button type="button" onClick={() => setSection("mapa")} style={ctaGhost}>
-                  <Map size={14} /> Ampliar mapa 3D
+                  <Map size={14} /> Ampliar mapa
                 </button>
                 {canApprove && (
                   <button type="button" onClick={() => setSection("sello")} style={ctaPrimary}>
@@ -715,13 +715,13 @@ export function CaseWorkspace(props: Props) {
           {section === "mapa" && (
             <SectionIntro
               kicker="Traza viva del caso"
-              title="Mapa 3D"
-              body="Globo completo: método, campo, síntesis, documentos y sello. Girás, tocás fases y ves la deducción entera sin salir del caso."
+              title="Mapa"
+              body="Grafo del ciclo: filtrá Método, TRIZ, Campo, Síntesis, Informe o Sello. Tocá un nodo y leés qué quedó registrado."
             />
           )}
         </div>
 
-        <aside className="cw-brain-dock" aria-label="Mapa 3D del caso">
+        <aside className="cw-brain-dock" aria-label="Mapa del caso">
           <CaseDecisionBrainLazy
             caseData={c}
             variant={section === "mapa" ? "full" : "companion"}

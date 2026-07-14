@@ -206,13 +206,13 @@ function activationOf(status: NodeStatus, isCursor: boolean): Activation {
 export function activationColor(a: Activation): string {
   switch (a) {
     case "past":
-      return "#3d8f62";
+      return "#6e7a68";
     case "current":
-      return "#d97706";
+      return "#9b6d4d";
     case "blocked":
-      return "#dc5a4a";
+      return "#8b3a3a";
     default:
-      return "#9aa3ad";
+      return "#706f69";
   }
 }
 
